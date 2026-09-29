@@ -36,6 +36,8 @@ final class FloatingPanelController {
     private func makePanel() -> KeyablePanel {
         let root = ServerListView(store: ServerStore.shared, isPanel: true)
             .background(.regularMaterial)
+            // The hidden title bar still reserves a safe area; the list should start at the very top.
+            .ignoresSafeArea()
         let controller = NSHostingController(rootView: root)
         controller.sizingOptions = [.preferredContentSize]
 
@@ -50,6 +52,7 @@ final class FloatingPanelController {
         panel.standardWindowButton(.closeButton)?.isHidden = true
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.titlebarSeparatorStyle = .none
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.hidesOnDeactivate = false

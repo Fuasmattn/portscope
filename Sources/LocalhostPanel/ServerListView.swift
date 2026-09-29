@@ -109,6 +109,15 @@ struct ServerListView: View {
                 .controlSize(.mini)
             }
             Spacer()
+            if isPanel {
+                Button {
+                    store.keepPanelOpen.toggle()
+                } label: {
+                    Image(systemName: store.keepPanelOpen ? "pin.fill" : "pin")
+                }
+                .buttonStyle(IconButtonStyle(active: store.keepPanelOpen))
+                .help(store.keepPanelOpen ? "Panel stays open" : "Keep panel open")
+            }
             SettingsLink {
                 Image(systemName: "gearshape")
             }
@@ -309,15 +318,6 @@ struct WatcherHeader: View {
             }
             .animation(.default, value: quip)
             Spacer()
-            if isPanel {
-                Button {
-                    store.keepPanelOpen.toggle()
-                } label: {
-                    Image(systemName: store.keepPanelOpen ? "pin.fill" : "pin")
-                }
-                .buttonStyle(IconButtonStyle(onDark: store.showMascot, active: store.keepPanelOpen))
-                .help(store.keepPanelOpen ? "Panel stays open" : "Keep panel open")
-            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: store.showMascot ? 80 : 0, alignment: .leading)
