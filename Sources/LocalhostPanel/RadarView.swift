@@ -2,7 +2,8 @@ import PanelCore
 import SwiftUI
 
 /// A radar scope that fills the header card. Its center sits on the card's top-right corner, so the
-/// card shows one quadrant: one blip per server, and a sweeping beam that lights blips as it passes.
+/// card shows one quadrant: one blip per server, and a sonar ping that expands from the corner to the
+/// far edge, lighting blips as it passes.
 struct RadarView: View {
     @ObservedObject var store: ServerStore
     /// Pointer position in the "panel" coordinate space, nil when the pointer is elsewhere.
@@ -28,25 +29,26 @@ struct RadarView: View {
         var departedAge: Double? = nil
     }
 
-    /// Sweep timing that stays continuous when the period changes (slow sweep on an empty scope).
-    private struct SweepClock {
+    /// Ping timing that stays continuous when the period changes (slower pings on an empty scope).
+    private struct PingClock {
         var period: Double = 4
-        var baseAngle: Double = 0
+        var basePhase: Double = 0
         var epoch: Date = Date()
 
-        func angle(at date: Date) -> Double {
-            (baseAngle + date.timeIntervalSince(epoch) / period * 360).truncatingRemainder(dividingBy: 360)
+        /// 0 at launch, 1 when the ring reaches the far edge.
+        func phase(at date: Date) -> Double {
+            (basePhase + date.timeIntervalSince(epoch) / period).truncatingRemainder(dividingBy: 1)
         }
 
         mutating func setPeriod(_ newPeriod: Double, at date: Date) {
             guard newPeriod != period else { return }
-            baseAngle = angle(at: date)
+            basePhase = phase(at: date)
             epoch = date
             period = newPeriod
         }
     }
 
-    @State private var clock = SweepClock()
+    @State private var clock = PingClock()
 
     private func blip(for entry: ServerEntry) -> Blip {
         Blip(
@@ -90,8 +92,8 @@ struct RadarView: View {
                 store.radarHover = newValue
             }
             .onChange(of: currentBlips.isEmpty, initial: true) { _, empty in
-                // Nothing to find: the beam relaxes to a slow patrol.
-                clock.setPeriod(empty ? 9 : 4, at: Date())
+                // Nothing to find: pings slow down.
+                clock.setPeriod(empty ? 8 : 4, at: Date())
             }
         }
         .accessibilityElement()
@@ -135,61 +137,73 @@ struct RadarView: View {
 
     // MARK: Drawing
 
+    /// How far a ring travels: from the corner to the opposite corner, plus a little.
+    private func reach(in size: CGSize) -> CGFloat {
+        hypot(size.width, size.height) + 8
+    }
+
     private func drawScope(_ context: inout GraphicsContext, size: CGSize, date: Date, blips: [Blip]) {
         let center = center(in: size)
+        let reach = reach(in: size)
 
         context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Self.scopeBackground))
 
-        for fraction in [0.25, 0.5, 0.75, 1.0] {
+        // Range rings spaced to the far corner, so the whole card reads as scope.
+        for fraction in [0.2, 0.4, 0.6, 0.8] {
             context.stroke(
-                circle(center: center, radius: radius * CGFloat(fraction)),
-                with: .color(phosphor.opacity(0.2)), lineWidth: 0.75)
+                circle(center: center, radius: reach * CGFloat(fraction)),
+                with: .color(phosphor.opacity(0.18)), lineWidth: 0.75)
         }
 
         var cross = Path()
-        cross.move(to: CGPoint(x: center.x - radius, y: center.y))
-        cross.addLine(to: CGPoint(x: center.x, y: center.y))
-        cross.move(to: CGPoint(x: center.x, y: center.y))
-        cross.addLine(to: CGPoint(x: center.x, y: center.y + radius))
-        context.stroke(cross, with: .color(phosphor.opacity(0.14)), lineWidth: 0.75)
+        cross.move(to: CGPoint(x: 0, y: center.y))
+        cross.addLine(to: center)
+        cross.addLine(to: CGPoint(x: center.x, y: size.height))
+        context.stroke(cross, with: .color(phosphor.opacity(0.12)), lineWidth: 0.75)
 
-        let sweep = reduceMotion ? 230.0 : clock.angle(at: date)
+        let phase = reduceMotion ? 0.55 : clock.phase(at: date)
+        let ring = reach * CGFloat(phase)
+        drawPing(&context, center: center, radius: ring, strength: 1 - 0.6 * phase)
 
-        // Fading trail behind the leading edge.
-        if !reduceMotion {
-            for step in 0..<28 {
-                var line = Path()
-                line.move(to: center)
-                line.addLine(to: point(center: center, radius: radius, degrees: sweep - Double(step) * 2.0))
-                let alpha = 0.34 * (1 - Double(step) / 28)
-                context.stroke(line, with: .color(phosphor.opacity(alpha)), lineWidth: 2.6)
-            }
-        }
-        var lead = Path()
-        lead.move(to: center)
-        lead.addLine(to: point(center: center, radius: radius, degrees: sweep))
-        context.stroke(lead, with: .color(phosphor.opacity(0.9)), lineWidth: 1)
-
-        // Manual ping from clicking the header.
+        // Manual ping from clicking the header rides on top of the regular one.
         if let ping = store.pingDate {
             let age = date.timeIntervalSince(ping)
-            if age >= 0, age < 1.2 {
-                context.stroke(
-                    circle(center: center, radius: radius * CGFloat(age / 1.2)),
-                    with: .color(phosphor.opacity(0.6 * (1 - age / 1.2))), lineWidth: 1.5)
+            if age >= 0, age < 1.4 {
+                drawPing(&context, center: center, radius: reach * CGFloat(age / 1.4), strength: 0.8 * (1 - age / 1.4))
             }
+        }
+
+        // Scanlines: faint CRT texture over everything drawn so far.
+        var lines = Path()
+        var y: CGFloat = 1
+        while y < size.height {
+            lines.move(to: CGPoint(x: 0, y: y))
+            lines.addLine(to: CGPoint(x: size.width, y: y))
+            y += 3
+        }
+        context.stroke(lines, with: .color(.black.opacity(0.14)), lineWidth: 1)
+
+        // Seconds since the ring passed a point at this distance; negative until it arrives.
+        func sincePassed(_ distance: CGFloat) -> Double {
+            Double((ring - distance) / reach) * clock.period
         }
 
         for blip in blips {
-            let (position, angle) = placement(of: blip, in: size)
-            var delta = (sweep - angle).truncatingRemainder(dividingBy: 360)
-            if delta < 0 { delta += 360 }
-            // Brightest just after the beam passes, fading over the rest of the rotation.
-            let intensity = reduceMotion ? 0.9 : 1 - 0.7 * delta / 360
+            let (position, _) = placement(of: blip, in: size)
+            let distance = hypot(position.x - center.x, position.y - center.y)
+            var since = sincePassed(distance)
+            if since < 0 { since += clock.period }
+            // Brightest the moment the ring passes, fading until the next ping.
+            let intensity = reduceMotion ? 0.9 : max(0, 1 - since / clock.period)
+            let flash = (!reduceMotion && since < 0.25) ? 1 - since / 0.25 : 0
             let highlighted = store.highlightedID == blip.id
             let color = blip.detached ? Color.orange : phosphor
-            var dot: CGFloat = highlighted ? 3.5 : 2.2
+            var dot: CGFloat = (highlighted ? 3.5 : 2.2) + CGFloat(flash) * 1.5
             var alpha = 0.35 + 0.65 * intensity
+
+            if flash > 0 {
+                context.fill(circle(center: position, radius: dot + 5), with: .color(color.opacity(0.4 * flash)))
+            }
 
             if blip.detached, !reduceMotion {
                 // Orphans throb slowly so they stand out without a label.
@@ -234,6 +248,22 @@ struct RadarView: View {
                     anchor: nearRight ? .trailing : .leading)
             }
         }
+    }
+
+    /// One expanding ring: a bright thin front, two softer trailing rings, and a wide faint wake.
+    private func drawPing(_ context: inout GraphicsContext, center: CGPoint, radius: CGFloat, strength: Double) {
+        guard radius > 0 else { return }
+        context.stroke(
+            circle(center: center, radius: max(0, radius - 8)),
+            with: .color(phosphor.opacity(0.06 * strength)), lineWidth: 16)
+        for (offset, alpha, width) in [(7.0, 0.22, 3.0), (14.0, 0.10, 3.0)] {
+            let r = radius - CGFloat(offset)
+            if r > 0 {
+                context.stroke(circle(center: center, radius: r), with: .color(phosphor.opacity(alpha * strength)), lineWidth: width)
+            }
+        }
+        context.stroke(circle(center: center, radius: radius), with: .color(phosphor.opacity(0.9 * strength)), lineWidth: 1.2)
+        context.stroke(circle(center: center, radius: radius), with: .color(Color.white.opacity(0.35 * strength)), lineWidth: 0.5)
     }
 
     private func circle(center: CGPoint, radius: CGFloat) -> Path {
