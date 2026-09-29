@@ -569,13 +569,6 @@ struct WatcherHeader: View {
             }
         }
         .panelGlass(cornerRadius: 16)
-        .background {
-            // Phosphor leaking past the card into the panel.
-            if store.showMascot {
-                RadarSpill(store: store, bleed: 32)
-                    .padding(-32)
-            }
-        }
         .padding(8)
         .contextMenu {
             Toggle("Show the radar", isOn: $store.showMascot)

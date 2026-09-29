@@ -115,9 +115,6 @@ final class ServerStore: ObservableObject {
         didSet { UserDefaults.standard.set(activeRefreshInterval, forKey: "activeRefreshInterval") }
     }
 
-    /// Shared by the radar card and its spill so both layers show the same beam angle.
-    var sweepClock = SweepClock()
-
     private let scanner = ServerScanner()
     private var loop: Task<Void, Never>?
     private var visibleWindows: Set<ObjectIdentifier> = []
