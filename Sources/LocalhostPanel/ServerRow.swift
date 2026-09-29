@@ -199,6 +199,9 @@ struct ServerRow: View {
         Button("Details") { store.toggleDetails(entry) }
         Button("Copy URL") { store.copyURL(entry) }
         Button("Copy port") { store.copyPort(entry) }
+        if entry.speaksHTTP {
+            Button("Copy as curl") { store.copyAsCurl(entry) }
+        }
         if entry.cwd != nil {
             Divider()
             let editors = Launchers.installedEditors
@@ -243,6 +246,13 @@ struct ServerRow: View {
 struct DetailsPopover: View {
     let entry: ServerEntry
     @ObservedObject var store: ServerStore
+    @State private var path: String
+
+    init(entry: ServerEntry, store: ServerStore) {
+        self.entry = entry
+        self.store = store
+        _path = State(initialValue: store.settings.openPath(for: entry.port))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -253,6 +263,21 @@ struct DetailsPopover: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer()
+            }
+            if entry.speaksHTTP {
+                HStack(spacing: 6) {
+                    Text("Opens")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Text("localhost:\(String(entry.port))")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    TextField("/", text: $path)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11, design: .monospaced))
+                        .onSubmit { store.settings.setOpenPath(path, for: entry.port) }
+                        .onChange(of: path) { _, value in store.settings.setOpenPath(value, for: entry.port) }
+                }
             }
             Grid(alignment: .topLeading, horizontalSpacing: 10, verticalSpacing: 8) {
                 row("Command", entry.commandLine, mono: true) { store.copy(entry.commandLine, label: "command") }

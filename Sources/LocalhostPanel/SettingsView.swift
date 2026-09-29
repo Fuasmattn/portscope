@@ -27,6 +27,19 @@ struct SettingsView: View {
                     }
                 }
                 Toggle("Show the radar", isOn: $settings.showMascot)
+                Picker("Stale server mark", selection: $settings.staleHours) {
+                    Text("Off").tag(0)
+                    Text("After 4 hours").tag(4)
+                    Text("After 12 hours").tag(12)
+                    Text("After a day").tag(24)
+                    Text("After 3 days").tag(72)
+                }
+                Text("Orange mark in the menu bar when a server has run longer than this.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle("Show system noise and hidden servers", isOn: $settings.showAll)
             }
             Section {
                 Picker("Clicking a row", selection: $settings.rowClickOpens) {

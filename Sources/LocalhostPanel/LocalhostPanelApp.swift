@@ -9,27 +9,7 @@ struct LocalhostPanelApp: App {
     @ObservedObject private var store = ServerStore.shared
 
     var body: some Scene {
-        MenuBarExtra {
-            ServerListView(store: store)
-        } label: {
-            HStack(spacing: 3) {
-                Image(nsImage: RadarGlyph.image)
-                    .symbolEffect(.bounce, value: store.badgeCount)
-                switch store.settings.badgeStyle {
-                case .count:
-                    Text("\(store.badgeCount)")
-                        .monospacedDigit()
-                case .dot:
-                    if store.badgeCount > 0 {
-                        Circle().frame(width: 5, height: 5)
-                    }
-                case .icon:
-                    EmptyView()
-                }
-            }
-        }
-        .menuBarExtraStyle(.window)
-
+        // The floating panel is the only UI; the menu bar item just toggles it.
         Settings {
             SettingsView(store: store)
         }
@@ -39,6 +19,7 @@ struct LocalhostPanelApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKey: GlobalHotKey?
     private var keyMonitor: Any?
+    private var statusItem: NSStatusItem?
     private var subscriptions: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -48,6 +29,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             let store = ServerStore.shared
             store.start()
+
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            item.button?.image = RadarGlyph.image
+            item.button?.imagePosition = .imageLeading
+            item.button?.target = self
+            item.button?.action = #selector(statusItemClicked)
+            statusItem = item
+            store.objectWillChange
+                .debounce(for: .milliseconds(50), scheduler: RunLoop.main)
+                .sink { [weak self] _ in self?.updateStatusItem() }
+                .store(in: &subscriptions)
+            updateStatusItem()
 
             registerHotKey(store.settings.hotKey)
             store.settings.$hotKey
@@ -67,6 +60,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return store.handleKey(event) ? nil : event
             }
         }
+    }
+
+    @objc private func statusItemClicked() {
+        let anchor = statusItem?.button?.window?.frame
+        Task { @MainActor in FloatingPanelController.shared.toggle(anchor: anchor) }
+    }
+
+    /// Count, dot, or nothing next to the glyph; an orange mark when a server has run past the stale threshold.
+    @MainActor
+    private func updateStatusItem() {
+        guard let button = statusItem?.button else { return }
+        let store = ServerStore.shared
+        let title = NSMutableAttributedString()
+        switch store.settings.badgeStyle {
+        case .count:
+            title.append(NSAttributedString(
+                string: " \(store.badgeCount)",
+                attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)]))
+        case .dot:
+            if store.badgeCount > 0 { title.append(NSAttributedString(string: " •")) }
+        case .icon:
+            break
+        }
+        if store.hasStaleServer {
+            title.append(NSAttributedString(string: " •", attributes: [.foregroundColor: NSColor.systemOrange]))
+        }
+        button.attributedTitle = title
+        button.toolTip = store.hasStaleServer
+            ? "A server has been running longer than \(store.settings.staleHours) hours"
+            : "\(store.badgeCount) servers on localhost"
     }
 
     private func registerHotKey(_ binding: HotKeyBinding) {

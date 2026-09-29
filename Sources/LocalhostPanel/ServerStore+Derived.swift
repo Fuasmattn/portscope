@@ -27,7 +27,7 @@ extension ServerStore {
 
     var visibleEntries: [ServerEntry] {
         let filtered = collapsedEntries.filter { entry in
-            guard showAll || isShownByDefault(entry) else { return false }
+            guard settings.showAll || isShownByDefault(entry) else { return false }
             return ListLogic.matches(
                 needle: filter, port: entry.port, projectName: entry.projectName,
                 processName: entry.processName, branch: entry.branch)
@@ -61,6 +61,13 @@ extension ServerStore {
     func isStuck(_ entry: ServerEntry, now: Date = Date()) -> Bool {
         guard let since = stopping[entry.id] else { return false }
         return ListLogic.isStuck(signalledAt: since, now: now)
+    }
+
+    /// True when a shown server has been up longer than the stale threshold from Settings.
+    var hasStaleServer: Bool {
+        let hours = settings.staleHours
+        guard hours > 0 else { return false }
+        return collapsedEntries.contains { isShownByDefault($0) && ($0.uptime ?? 0) > Double(hours) * 3600 }
     }
 
     /// Uptime as of `now`, extrapolated from the last scan so it ticks between scans.

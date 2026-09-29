@@ -47,7 +47,6 @@ final class ServerStore: ObservableObject {
     @Published var filter = ""
     /// Bumped when the filter field should take keyboard focus (⌘F).
     @Published var filterFocusRequest = 0
-    @Published var showAll = false
     @Published var message: String?
     /// When true the floating panel stays open after focus moves elsewhere.
     @Published var keepPanelOpen = false

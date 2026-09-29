@@ -3,9 +3,19 @@ import PanelCore
 
 // Things the user does to a server: open, copy, reveal, stop, start again.
 extension ServerStore {
+    /// http://localhost:PORT plus the path remembered for that port.
+    func url(for entry: ServerEntry) -> URL? {
+        URL(string: "http://localhost:\(entry.port)\(settings.openPath(for: entry.port))")
+    }
+
     func open(_ entry: ServerEntry) {
-        guard let url = entry.url else { return }
+        guard let url = url(for: entry) else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    func copyAsCurl(_ entry: ServerEntry) {
+        guard let url = url(for: entry) else { return }
+        copy("curl -i \(url.absoluteString)", label: "curl command")
     }
 
     func copyURL(_ entry: ServerEntry) {

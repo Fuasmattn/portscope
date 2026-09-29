@@ -19,23 +19,50 @@ final class FloatingPanelController {
     private var resignObserver: NSObjectProtocol?
     private var moveObserver: NSObjectProtocol?
 
+    /// When the panel last went away, so a status item click that closed it (by taking key) does not reopen it.
+    private var lastHiddenAt: Date = .distantPast
+
+    var isVisible: Bool { panel?.isVisible ?? false }
+
+    /// Hotkey: open near the mouse, or where it was left.
     func toggle() {
+        toggle(anchor: nil)
+    }
+
+    /// Status item: open under the icon, or where it was left.
+    func toggle(anchor: NSRect?) {
         if let panel = panel, panel.isVisible {
             panel.orderOut(nil)
+        } else if Date().timeIntervalSince(lastHiddenAt) < 0.3 {
+            // The click that reached us already closed the panel by taking key. Leave it closed.
+            return
         } else {
-            show()
+            show(anchor: anchor)
         }
     }
 
-    private func show() {
+    private func show(anchor: NSRect?) {
         let panel = self.panel ?? makePanel()
         self.panel = panel
         if ServerStore.shared.settings.rememberPanelPosition, let saved = savedOrigin, fits(saved, panel) {
             panel.setFrameOrigin(saved)
+        } else if let anchor = anchor {
+            position(panel, under: anchor)
         } else {
             position(panel)
         }
         panel.makeKeyAndOrderFront(nil)
+    }
+
+    /// Centred under a menu bar item, clamped to that screen.
+    private func position(_ panel: NSPanel, under anchor: NSRect) {
+        let screen = NSScreen.screens.first { $0.frame.intersects(anchor) } ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return }
+        let size = panel.frame.size
+        var origin = NSPoint(x: anchor.midX - size.width / 2, y: anchor.minY - size.height - 6)
+        origin.x = min(max(origin.x, visible.minX + 8), visible.maxX - size.width - 8)
+        origin.y = max(origin.y, visible.minY + 8)
+        panel.setFrameOrigin(origin)
     }
 
     private var savedOrigin: NSPoint? {
@@ -99,6 +126,7 @@ final class FloatingPanelController {
             MainActor.assumeIsolated {
                 guard !ServerStore.shared.keepPanelOpen else { return }
                 panel?.orderOut(nil)
+                FloatingPanelController.shared.lastHiddenAt = Date()
             }
         }
         return panel

@@ -42,13 +42,25 @@ struct ServerListView: View {
         }
     }
 
+    /// Quitting mid-stop would leave a SIGTERM unanswered with no one offering SIGKILL.
+    private func quit() {
+        guard !store.stopping.isEmpty else { NSApplication.shared.terminate(nil); return }
+        let alert = NSAlert()
+        alert.messageText = "A server is still stopping"
+        alert.informativeText = "Quit anyway? The stop was sent, but you will not see whether it worked."
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Wait")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn { NSApplication.shared.terminate(nil) }
+    }
+
     private var header: some View {
         WatcherHeader(store: store, pointer: pointer, isPanel: isPanel)
     }
 
     private var showsSearch: Bool {
         searchPinned || !store.filter.isEmpty
-            || store.entries.filter { store.showAll || store.isShownByDefault($0) }.count > searchThreshold
+            || store.entries.filter { store.settings.showAll || store.isShownByDefault($0) }.count > searchThreshold
     }
 
     @ViewBuilder
@@ -119,17 +131,17 @@ struct ServerListView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-            } else if store.hiddenCount > 0 || store.showAll {
+            } else if store.hiddenCount > 0 || store.settings.showAll {
                 Button {
-                    store.showAll.toggle()
+                    store.settings.showAll.toggle()
                 } label: {
-                    Text(store.showAll ? "Hide \(store.hiddenCount) again" : "Show \(store.hiddenCount) hidden")
+                    Text(store.settings.showAll ? "Hide \(store.hiddenCount) again" : "Show \(store.hiddenCount) hidden")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .underline(true, color: Color.secondary.opacity(0.4))
                 }
                 .buttonStyle(.plain)
-                .help(store.showAll ? "Back to the filtered list" : "Include system noise and hidden servers")
+                .help(store.settings.showAll ? "Back to the filtered list" : "Include system noise and hidden servers")
             }
             Spacer()
             if isPanel {
@@ -150,7 +162,7 @@ struct ServerListView: View {
                 NSApplication.shared.activate(ignoringOtherApps: true)
             })
             .help("Settings")
-            Button("Quit") { NSApplication.shared.terminate(nil) }
+            Button("Quit") { quit() }
                 .buttonStyle(.borderless)
                 .font(.caption)
                 .foregroundStyle(.secondary)

@@ -2,6 +2,8 @@
 
 Menu bar app that shows which dev servers are listening on localhost. Working title.
 
+![The panel: radar header, three servers, recently stopped, footer](docs/screenshot.png)
+
 See [SPEC.md](SPEC.md) for scope and decisions.
 
 ## Build and run
@@ -27,7 +29,7 @@ Run the tests:
 swift test
 ```
 
-- Click the menu bar item for the list. Control-Option-L opens a floating panel near the cursor.
+- Click the menu bar item to open the panel under it, or press Control-Option-L (changeable in Settings) to open it near the cursor. Drag it by the radar card, pin it open with the pin in the footer, Esc closes it.
 - Click the arrow to open a server in your browser. Click the x, then Stop, to send SIGTERM. Option-click Stop for SIGKILL.
 - Right-click a row to pin, hide, copy the URL or port, open the project in an installed editor or terminal, or reveal its working directory.
 - After Stop, the row shows "stopping…". If the process ignores SIGTERM for a few seconds, a Force kill button appears.
@@ -39,4 +41,5 @@ swift test
 - Right-click also offers "Hide project", by folder. Settings has a reset for all hidden ports, processes, and projects. A dot before the port shows the HTTP status: green answered, yellow 4xx, red 5xx, grey open but silent.
 - Keyboard: ↑ ↓ select, ↩ open, Space details, ⌘⌫ stop (⌥ for SIGKILL), ⌘F filter, ⎋ clear.
 - Recently stopped servers stay listed at the bottom with a "Start again" button that reruns the same command in the same folder.
-- Settings (gear in the footer): hotkey, reopen panel where you left it, menu bar badge style, refresh rate, radar on/off.
+- The popover also has a path field per port, so Open goes to `/docs` or wherever you last set. Right-click → Copy as curl copies `curl -i` for that URL.
+- Settings (gear in the footer): hotkey, reopen panel where you left it, menu bar badge style, stale server mark (orange dot in the menu bar after N hours), show system noise, refresh rate, radar on/off.
