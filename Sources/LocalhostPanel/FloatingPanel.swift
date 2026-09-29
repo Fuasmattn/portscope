@@ -27,9 +27,23 @@ final class FloatingPanelController {
         }
     }
 
+    /// Resizes the window to the content, keeping the top-left corner where it is.
+    fileprivate func contentSizeChanged(_ size: CGSize) {
+        guard let panel = panel, size.width > 0, size.height > 0 else { return }
+        var frame = panel.frame
+        guard abs(frame.height - size.height) > 0.5 || abs(frame.width - size.width) > 0.5 else { return }
+        frame.origin.y = frame.maxY - size.height
+        frame.size = size
+        panel.setFrame(frame, display: true, animate: false)
+    }
+
     private func show() {
         let panel = self.panel ?? makePanel()
         self.panel = panel
+        if let content = panel.contentView {
+            let size = content.fittingSize
+            if size.height > 0 { panel.setContentSize(size) }
+        }
         if ServerStore.shared.rememberPanelPosition, let saved = savedOrigin, fits(saved, panel) {
             panel.setFrameOrigin(saved)
         } else {
@@ -51,12 +65,18 @@ final class FloatingPanelController {
 
     private func makePanel() -> KeyablePanel {
         // Borderless: no title bar, so the window is exactly the size of the list. Corners and
-        // shadow are ours.
+        // shadow are ours. The window is not auto-sized; it follows the content's measured size
+        // every frame, so SwiftUI's spring drives the window edge too instead of a one-step jump.
         let root = ServerListView(store: ServerStore.shared, isPanel: true)
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 14))
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                // Off the layout pass: setting a window frame mid-layout would re-enter it.
+                DispatchQueue.main.async { FloatingPanelController.shared.contentSizeChanged(size) }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         let controller = NSHostingController(rootView: root)
-        controller.sizingOptions = [.preferredContentSize]
+        controller.sizingOptions = []
 
         let panel = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 200),
