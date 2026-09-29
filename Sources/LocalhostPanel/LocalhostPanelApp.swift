@@ -82,28 +82,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// The menu bar icon: a tiny scope with a beam, rendered once as a template image.
+/// The menu bar icon: a corner scope with rings widening outward and one contact, rendered once as a template image.
 @MainActor
 enum RadarGlyph {
     static let image: NSImage = {
         let side: CGFloat = 18
         let renderer = ImageRenderer(content: Canvas { context, size in
-            let center = CGPoint(x: size.width / 2, y: size.height / 2 + 0.5)
-            let radius = size.width / 2 - 1.5
-            let ring = Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
-            context.stroke(ring, with: .color(.black), lineWidth: 1.5)
-            let inner = radius * 0.5
-            context.stroke(
-                Path(ellipseIn: CGRect(x: center.x - inner, y: center.y - inner, width: inner * 2, height: inner * 2)),
-                with: .color(.black.opacity(0.55)), lineWidth: 1)
-            var wedge = Path()
-            wedge.move(to: center)
-            wedge.addArc(center: center, radius: radius, startAngle: .degrees(-90), endAngle: .degrees(-20), clockwise: false)
-            wedge.closeSubpath()
-            context.fill(wedge, with: .color(.black.opacity(0.85)))
-            let dot = CGPoint(x: center.x - radius * 0.45, y: center.y + radius * 0.35)
-            context.fill(Path(ellipseIn: CGRect(x: dot.x - 1.5, y: dot.y - 1.5, width: 3, height: 3)), with: .color(.black))
-        }.frame(width: side, height: side))
+            let origin = CGPoint(x: size.width - 1.5, y: 1.5)
+            let reach = hypot(size.width, size.height) - 2
+            func ring(_ radius: CGFloat) -> Path {
+                Path(ellipseIn: CGRect(x: origin.x - radius, y: origin.y - radius, width: radius * 2, height: radius * 2))
+            }
+            for step in 1...3 {
+                let fraction = pow(CGFloat(step) / 3.3, 1.5)
+                let alpha = step == 3 ? 1.0 : 0.55 + 0.15 * Double(step)
+                context.stroke(ring(reach * fraction), with: .color(.black.opacity(alpha)), lineWidth: step == 3 ? 1.6 : 1.1)
+            }
+            context.fill(ring(1.6), with: .color(.black))
+            let dot = CGPoint(x: size.width * 0.42, y: size.height * 0.58)
+            context.fill(Path(ellipseIn: CGRect(x: dot.x - 1.8, y: dot.y - 1.8, width: 3.6, height: 3.6)), with: .color(.black))
+        }.frame(width: side, height: side).clipShape(RoundedRectangle(cornerRadius: 4)))
         renderer.scale = 2
         let image = renderer.nsImage ?? NSImage(systemSymbolName: "network", accessibilityDescription: nil)!
         image.isTemplate = true

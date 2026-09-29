@@ -148,8 +148,9 @@ struct RadarView: View {
 
         context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Self.scopeBackground))
 
-        // Range rings spaced to the far corner, so the whole card reads as scope.
-        for fraction in [0.2, 0.4, 0.6, 0.8] {
+        // Range rings out to the far corner, tight near the origin and widening with distance.
+        for step in 1...5 {
+            let fraction = pow(Double(step) / 5.5, 1.7)
             context.stroke(
                 circle(center: center, radius: reach * CGFloat(fraction)),
                 with: .color(phosphor.opacity(0.18)), lineWidth: 0.75)
