@@ -242,8 +242,7 @@ struct ServerRow: View {
             .frame(height: rowHeight)
             .contentShape(Rectangle())
             .onTapGesture {
-                // Click the row to open it; servers that are not HTTP show their details instead.
-                if entry.speaksHTTP { store.open(entry) } else { store.toggleDetails(entry) }
+                if store.rowClickOpens, entry.speaksHTTP { store.open(entry) } else { store.toggleDetails(entry) }
             }
 
             if expanded {
@@ -304,43 +303,41 @@ struct ServerRow: View {
         }
     }
 
+    /// Label column, value column, copy button. Branch and launcher already sit in the row subtitle.
     private var details: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            detailRow("Command", entry.commandLine) { store.copy(entry.commandLine, label: "command") }
+        Grid(alignment: .topLeading, horizontalSpacing: 10, verticalSpacing: 6) {
+            detailRow("Command", entry.commandLine, mono: true) { store.copy(entry.commandLine, label: "command") }
             if let cwd = entry.cwd {
-                detailRow("Folder", cwd) { store.copy(cwd, label: "path") }
+                detailRow("Folder", cwd, mono: true) { store.copy(cwd, label: "path") }
             }
-            HStack(spacing: 12) {
-                Text("PID \(String(entry.pid))")
-                if let launcher = entry.launcher { Text("via \(launcher)") }
-                if let branch = entry.branch { Text("on \(branch)") }
-                Text(entry.loopbackOnly ? "loopback only" : "all interfaces (\(entry.host))")
-                Spacer()
-                Button("Copy PID") { store.copy(String(entry.pid), label: "PID") }
-                    .buttonStyle(.borderless)
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+            detailRow("PID", String(entry.pid), mono: true) { store.copy(String(entry.pid), label: "PID") }
+            detailRow("Listening", entry.loopbackOnly ? "localhost only" : "all interfaces (\(entry.host))", mono: false, copy: nil)
         }
         .padding(.leading, 68 + 10)
+        .padding(.trailing, 2)
         .padding(.bottom, 10)
     }
 
-    private func detailRow(_ label: String, _ value: String, copy: @escaping () -> Void) -> some View {
-        HStack(alignment: .top, spacing: 6) {
+    private func detailRow(_ label: String, _ value: String, mono: Bool, copy: (() -> Void)?) -> some View {
+        GridRow {
             Text(label)
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 56, alignment: .leading)
+                .gridColumnAlignment(.leading)
+                .padding(.top, 1)
             Text(value)
-                .font(.system(size: 11, design: .monospaced))
+                .font(mono ? .system(size: 11, design: .monospaced) : .caption)
                 .textSelection(.enabled)
                 .lineLimit(3)
                 .truncationMode(.middle)
-            Spacer(minLength: 0)
-            Button { copy() } label: { Image(systemName: "doc.on.doc") }
-                .buttonStyle(IconButtonStyle())
-                .help("Copy")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let copy = copy {
+                Button { copy() } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(IconButtonStyle())
+                    .help("Copy")
+            } else {
+                Color.clear.frame(width: 24, height: 1)
+            }
         }
     }
 
@@ -650,7 +647,7 @@ struct IconButtonStyle: ButtonStyle {
                 .font(.body)
                 .foregroundStyle(foreground)
                 .frame(width: 24, height: 24)
-                .background(Circle().fill(base.opacity(hovering ? 0.16 : 0)))
+                .background(Circle().fill(base.opacity(hovering ? 0.16 : (active ? 0.1 : 0))))
                 .opacity(configuration.isPressed ? 0.6 : 1)
                 .contentShape(Circle())
                 .onHover { hovering = $0 }
@@ -660,7 +657,7 @@ struct IconButtonStyle: ButtonStyle {
         private var base: Color { onDark ? .white : .primary }
 
         private var foreground: Color {
-            if active { return onDark ? .white : .accentColor }
+            if active { return base }
             return base.opacity(hovering ? 1 : (onDark ? 0.8 : 0.65))
         }
     }

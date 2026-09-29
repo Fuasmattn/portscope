@@ -23,6 +23,15 @@ struct SettingsView: View {
                 Toggle("Show the radar", isOn: $store.showMascot)
             }
             Section {
+                Picker("Clicking a row", selection: $store.rowClickOpens) {
+                    Text("Shows details").tag(false)
+                    Text("Opens in browser").tag(true)
+                }
+                Text("↩ always opens, Space always shows details.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Picker("Refresh while open", selection: $store.activeRefreshInterval) {
                     Text("Every second").tag(1.0)
                     Text("Every 2 seconds").tag(2.0)

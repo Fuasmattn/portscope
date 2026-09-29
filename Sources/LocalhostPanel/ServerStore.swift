@@ -98,6 +98,10 @@ final class ServerStore: ObservableObject {
     @Published var badgeStyle: BadgeStyle {
         didSet { UserDefaults.standard.set(badgeStyle.rawValue, forKey: "badgeStyle") }
     }
+    /// Single click on a row opens the browser instead of the details.
+    @Published var rowClickOpens: Bool {
+        didSet { UserDefaults.standard.set(rowClickOpens, forKey: "rowClickOpens") }
+    }
     @Published var rememberPanelPosition: Bool {
         didSet { UserDefaults.standard.set(rememberPanelPosition, forKey: "rememberPanelPosition") }
     }
@@ -126,6 +130,7 @@ final class ServerStore: ObservableObject {
         activeRefreshInterval = UserDefaults.standard.object(forKey: "activeRefreshInterval") as? Double ?? 2
         badgeStyle = BadgeStyle(rawValue: UserDefaults.standard.string(forKey: "badgeStyle") ?? "") ?? .count
         rememberPanelPosition = UserDefaults.standard.bool(forKey: "rememberPanelPosition")
+        rowClickOpens = UserDefaults.standard.bool(forKey: "rowClickOpens")
         hotKey = UserDefaults.standard.data(forKey: "hotKey")
             .flatMap { try? JSONDecoder().decode(HotKeyBinding.self, from: $0) } ?? .default
         recentlyStopped = UserDefaults.standard.data(forKey: "recentlyStopped")
