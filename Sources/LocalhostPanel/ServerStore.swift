@@ -1,5 +1,6 @@
 import AppKit
 import PanelCore
+import ServiceManagement
 import SwiftUI
 
 enum Reaction {
@@ -32,6 +33,18 @@ final class ServerStore: ObservableObject {
     @Published var message: String?
     /// When true the floating panel stays open after focus moves elsewhere.
     @Published var keepPanelOpen = false
+    /// Servers we have signalled, keyed by entry id, with the time of the signal.
+    /// Cleared when the server disappears from a scan.
+    @Published private(set) var stopping: [String: Date] = [:]
+    /// Servers that vanished recently, so the radar can fade their blips out.
+    @Published private(set) var departed: [(entry: ServerEntry, at: Date)] = []
+    /// Type-to-filter text for the list.
+    @Published var filter = ""
+    /// Seconds between scans while a window is showing.
+    @Published var activeRefreshInterval: Double {
+        didSet { UserDefaults.standard.set(activeRefreshInterval, forKey: "activeRefreshInterval") }
+    }
+    @Published private(set) var launchAtLogin = false
 
     private let scanner = ServerScanner()
     private var loop: Task<Void, Never>?
@@ -45,12 +58,22 @@ final class ServerStore: ObservableObject {
         hiddenPorts = Set(UserDefaults.standard.array(forKey: "hiddenPorts") as? [Int] ?? [])
         hiddenProcesses = Set(UserDefaults.standard.array(forKey: "hiddenProcesses") as? [String] ?? [])
         showMascot = UserDefaults.standard.object(forKey: "showMascot") as? Bool ?? true
+        activeRefreshInterval = UserDefaults.standard.object(forKey: "activeRefreshInterval") as? Double ?? 2
+        launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
     // MARK: Derived state
 
     var visibleEntries: [ServerEntry] {
-        let filtered = entries.filter { showAll || isShownByDefault($0) }
+        let needle = filter.trimmingCharacters(in: .whitespaces).lowercased()
+        let filtered = entries.filter { entry in
+            guard showAll || isShownByDefault(entry) else { return false }
+            guard !needle.isEmpty else { return true }
+            return String(entry.port).contains(needle)
+                || entry.projectName.lowercased().contains(needle)
+                || entry.processName.lowercased().contains(needle)
+                || (entry.branch?.lowercased().contains(needle) ?? false)
+        }
         return filtered.sorted { lhs, rhs in
             let leftPinned = pinnedPorts.contains(lhs.port)
             let rightPinned = pinnedPorts.contains(rhs.port)
@@ -67,6 +90,12 @@ final class ServerStore: ObservableObject {
 
     var hiddenCount: Int {
         entries.count - badgeCount
+    }
+
+    /// True once a stop signal has gone unanswered long enough to offer SIGKILL.
+    func isStuck(_ entry: ServerEntry, now: Date = Date()) -> Bool {
+        guard let since = stopping[entry.id] else { return false }
+        return now.timeIntervalSince(since) > 4
     }
 
     /// Pinned always shows. Otherwise hidden if it looks like a system/app listener
@@ -86,7 +115,7 @@ final class ServerStore: ObservableObject {
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
-                let seconds: Double = (self?.isActive ?? false) ? 2 : 10
+                let seconds: Double = (self?.isActive ?? false) ? (self?.activeRefreshInterval ?? 2) : 10
                 try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             }
         }
@@ -116,6 +145,11 @@ final class ServerStore: ObservableObject {
             lastArrivalDate = Date()
             react(.alert, for: 1.8)
         }
+        // Remember what vanished so the radar can fade it out, and drop finished stop attempts.
+        let now = Date()
+        let gone = entries.filter { !ids.contains($0.id) }
+        departed = departed.filter { now.timeIntervalSince($0.at) < 1.5 } + gone.map { ($0, now) }
+        for entry in gone { stopping[entry.id] = nil }
         knownIDs = ids
 
         withAnimation(.spring(duration: 0.35)) {
@@ -140,6 +174,57 @@ final class ServerStore: ObservableObject {
     func revealWorkingDirectory(_ entry: ServerEntry) {
         guard let cwd = entry.cwd else { return }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: cwd)])
+    }
+
+    /// Apps that can open a project folder, in menu order. Only installed ones are returned.
+    struct EditorApp: Identifiable {
+        let id: String
+        let name: String
+        let url: URL
+    }
+
+    static let editorCandidates: [(bundleID: String, name: String)] = [
+        ("com.microsoft.VSCode", "VS Code"),
+        ("com.todesktop.230313mzl4w4u92", "Cursor"),
+        ("dev.zed.Zed", "Zed"),
+        ("com.jetbrains.intellij", "IntelliJ IDEA"),
+        ("com.jetbrains.WebStorm", "WebStorm"),
+        ("com.sublimetext.4", "Sublime Text"),
+        ("com.apple.Terminal", "Terminal"),
+        ("com.googlecode.iterm2", "iTerm"),
+        ("dev.warp.Warp-Stable", "Warp"),
+        ("com.mitchellh.ghostty", "Ghostty"),
+    ]
+
+    lazy var installedEditors: [EditorApp] = Self.editorCandidates.compactMap { candidate in
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: candidate.bundleID) else { return nil }
+        return EditorApp(id: candidate.bundleID, name: candidate.name, url: url)
+    }
+
+    func openWorkingDirectory(_ entry: ServerEntry, in editor: EditorApp) {
+        guard let cwd = entry.cwd else { return }
+        let configuration = NSWorkspace.OpenConfiguration()
+        NSWorkspace.shared.open([URL(fileURLWithPath: cwd)], withApplicationAt: editor.url, configuration: configuration) { _, error in
+            if let error = error {
+                Task { @MainActor in self.show("Could not open in \(editor.name): \(error.localizedDescription)") }
+            }
+        }
+    }
+
+    func copyPort(_ entry: ServerEntry) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(String(entry.port), forType: .string)
+        show("Copied \(entry.port)")
+    }
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        } catch {
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+            show("Launch at login unavailable: \(error.localizedDescription)")
+        }
     }
 
     func togglePin(_ entry: ServerEntry) {
@@ -187,7 +272,8 @@ final class ServerStore: ObservableObject {
             switch result {
             case .signalled(let count):
                 let extra = count > 1 ? " (+\(count - 1) child processes)" : ""
-                show((force ? "Killed" : "Stopped") + " :\(entry.port)" + extra)
+                show((force ? "Killed" : "Stopping") + " :\(entry.port)" + extra)
+                if stopping[entry.id] == nil { stopping[entry.id] = Date() }
             case .notFound:
                 show("Already stopped")
             case .pidReused:

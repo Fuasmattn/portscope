@@ -4,6 +4,8 @@ import SwiftUI
 
 private let rowHeight: CGFloat = 58
 private let maxListHeight: CGFloat = 420
+/// Above this many rows a search field appears.
+private let searchThreshold = 8
 
 struct ServerListView: View {
     @ObservedObject var store: ServerStore
@@ -35,6 +37,11 @@ struct ServerListView: View {
         WatcherHeader(store: store, pointer: pointer, isPanel: isPanel)
     }
 
+    private var showsSearch: Bool {
+        store.entries.filter { store.showAll || store.isShownByDefault($0) }.count > searchThreshold
+            || !store.filter.isEmpty
+    }
+
     @ViewBuilder
     private var content: some View {
         let rows = store.visibleEntries
@@ -42,24 +49,48 @@ struct ServerListView: View {
             ProgressView()
                 .controlSize(.small)
                 .frame(maxWidth: .infinity, minHeight: 80)
-        } else if rows.isEmpty {
-            Text("No servers listening")
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: 80)
         } else {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(rows) { entry in
-                        ServerRow(entry: entry, store: store)
-                            .frame(height: rowHeight)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                        Divider().padding(.leading, 12)
+            if showsSearch {
+                searchField
+            }
+            if rows.isEmpty {
+                Text(store.filter.isEmpty ? "No servers listening" : "No match for “\(store.filter)”")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 80)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(rows) { entry in
+                            ServerRow(entry: entry, store: store)
+                                .frame(height: rowHeight)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            Divider().padding(.leading, 12)
+                        }
                     }
                 }
+                .frame(height: min(CGFloat(rows.count) * (rowHeight + 1), maxListHeight))
+                .animation(.spring(duration: 0.35), value: rows.map(\.id))
             }
-            .frame(height: min(CGFloat(rows.count) * (rowHeight + 1), maxListHeight))
-            .animation(.spring(duration: 0.35), value: rows.map(\.id))
         }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .font(.caption)
+            TextField("Filter by port, project, or branch", text: $store.filter)
+                .textFieldStyle(.plain)
+                .font(.callout)
+            if !store.filter.isEmpty {
+                Button { store.filter = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(IconButtonStyle())
+                    .help("Clear filter")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.primary.opacity(0.04))
     }
 
     private var footer: some View {
@@ -78,6 +109,15 @@ struct ServerListView: View {
                 .controlSize(.mini)
             }
             Spacer()
+            SettingsLink {
+                Image(systemName: "gearshape")
+            }
+            .buttonStyle(IconButtonStyle())
+            .simultaneousGesture(TapGesture().onEnded {
+                // Accessory apps are not active, so the window would open behind everything.
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            })
+            .help("Settings")
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .buttonStyle(.borderless)
                 .font(.caption)
@@ -92,6 +132,9 @@ struct ServerRow: View {
     let entry: ServerEntry
     @ObservedObject var store: ServerStore
     @State private var confirmingKill = false
+
+    private var hovered: Bool { store.highlightedID == entry.id }
+    private var isStopping: Bool { store.stopping[entry.id] != nil }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -114,6 +157,12 @@ struct ServerRow: View {
                             .font(.caption2)
                             .foregroundStyle(.orange)
                     }
+                    if !entry.loopbackOnly {
+                        Image(systemName: "network")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                            .help("Listening on all interfaces, reachable from your network")
+                    }
                 }
                 Text(subtitle)
                     .font(.caption)
@@ -124,55 +173,99 @@ struct ServerRow: View {
 
             Spacer(minLength: 4)
 
-            if confirmingKill {
-                Button("Cancel") { confirmingKill = false }
-                    .buttonStyle(PillButtonStyle(role: .neutral))
-                Button("Stop") {
-                    // Option-click sends SIGKILL instead of SIGTERM.
-                    let force = NSEvent.modifierFlags.contains(.option)
-                    confirmingKill = false
-                    store.terminate(entry, force: force)
-                }
-                .buttonStyle(PillButtonStyle(role: .destructive))
-                .help("Option-click to force kill")
-            } else {
-                if entry.speaksHTTP {
-                    Button { store.open(entry) } label: { Image(systemName: "arrow.up.right.square") }
-                        .buttonStyle(.borderless)
-                        .help("Open in browser")
-                }
-                Button { confirmingKill = true } label: { Image(systemName: "xmark.circle") }
-                    .buttonStyle(.borderless)
-                    .help("Stop process")
-            }
+            trailing
         }
         .padding(.horizontal, 12)
-        .background(store.highlightedID == entry.id ? Color.accentColor.opacity(0.12) : Color.clear)
+        .background(hovered ? Color.accentColor.opacity(0.12) : Color.clear)
         .onHover { inside in
             if inside {
                 store.rowHover = entry.id
             } else if store.rowHover == entry.id {
                 store.rowHover = nil
+                confirmingKill = false
             }
         }
-        .opacity(store.isShownByDefault(entry) ? 1 : 0.5)
+        .opacity(isStopping ? 0.55 : (store.isShownByDefault(entry) ? 1 : 0.5))
         .contentShape(Rectangle())
-        .contextMenu {
-            Button("Copy URL") { store.copyURL(entry) }
-            Button(store.pinnedPorts.contains(entry.port) ? "Unpin" : "Pin (always show)") { store.togglePin(entry) }
-            Button(store.hiddenProcesses.contains(entry.processName)
-                   ? "Unhide all \(entry.processName)" : "Hide all \(entry.processName)") {
-                store.toggleHiddenProcess(entry)
+        .contextMenu { menu }
+    }
+
+    @ViewBuilder
+    private var trailing: some View {
+        if isStopping {
+            // Re-evaluates once a second so the force-kill offer shows up when the process ignores SIGTERM.
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                if store.isStuck(entry, now: timeline.date) {
+                    Button("Force kill") { store.terminate(entry, force: true) }
+                        .buttonStyle(PillButtonStyle(role: .destructive))
+                        .help("Process ignored SIGTERM. Send SIGKILL")
+                } else {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text("stopping…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
-            Button(store.hiddenPorts.contains(entry.port) ? "Unhide port \(String(entry.port))" : "Hide port \(String(entry.port))") {
-                store.toggleHidden(entry)
+        } else if confirmingKill {
+            Button("Cancel") { confirmingKill = false }
+                .buttonStyle(PillButtonStyle(role: .neutral))
+            Button("Stop") {
+                // Option-click sends SIGKILL instead of SIGTERM.
+                let force = NSEvent.modifierFlags.contains(.option)
+                confirmingKill = false
+                store.terminate(entry, force: force)
             }
-            if entry.cwd != nil {
-                Button("Reveal working directory") { store.revealWorkingDirectory(entry) }
+            .buttonStyle(PillButtonStyle(role: .destructive))
+            .help("Option-click to force kill")
+        } else {
+            HStack(spacing: 2) {
+                if entry.speaksHTTP {
+                    Button { store.open(entry) } label: { Image(systemName: "arrow.up.right.square") }
+                        .buttonStyle(IconButtonStyle())
+                        .help("Open in browser")
+                }
+                Button { confirmingKill = true } label: { Image(systemName: "xmark.circle") }
+                    .buttonStyle(IconButtonStyle())
+                    .help("Stop process")
             }
-            Divider()
-            Button("Force kill (SIGKILL)") { store.terminate(entry, force: true) }
+            .opacity(hovered ? 1 : 0)
+            .animation(.easeOut(duration: 0.12), value: hovered)
         }
+    }
+
+    @ViewBuilder
+    private var menu: some View {
+        if entry.speaksHTTP {
+            Button("Open in browser") { store.open(entry) }
+        }
+        Button("Copy URL") { store.copyURL(entry) }
+        Button("Copy port") { store.copyPort(entry) }
+        if entry.cwd != nil {
+            Divider()
+            let editors = store.installedEditors
+            if !editors.isEmpty {
+                Menu("Open project in") {
+                    ForEach(editors) { editor in
+                        Button(editor.name) { store.openWorkingDirectory(entry, in: editor) }
+                    }
+                }
+            }
+            Button("Reveal working directory") { store.revealWorkingDirectory(entry) }
+        }
+        Divider()
+        Button(store.pinnedPorts.contains(entry.port) ? "Unpin" : "Pin (always show)") { store.togglePin(entry) }
+        Button(store.hiddenProcesses.contains(entry.processName)
+               ? "Unhide all \(entry.processName)" : "Hide all \(entry.processName)") {
+            store.toggleHiddenProcess(entry)
+        }
+        Button(store.hiddenPorts.contains(entry.port) ? "Unhide port \(String(entry.port))" : "Hide port \(String(entry.port))") {
+            store.toggleHidden(entry)
+        }
+        Divider()
+        Button("Stop (SIGTERM)") { store.terminate(entry, force: false) }
+        Button("Force kill (SIGKILL)") { store.terminate(entry, force: true) }
     }
 
     private var subtitle: String {
@@ -181,7 +274,6 @@ struct ServerRow: View {
         parts.append(entry.processName)
         if let uptime = entry.uptime { parts.append(Formatting.uptime(uptime)) }
         if let launcher = entry.launcher { parts.append("via \(launcher)") }
-        if !entry.loopbackOnly { parts.append("network") }
         return parts.joined(separator: " · ")
     }
 }
@@ -222,9 +314,8 @@ struct WatcherHeader: View {
                     store.keepPanelOpen.toggle()
                 } label: {
                     Image(systemName: store.keepPanelOpen ? "pin.fill" : "pin")
-                        .foregroundStyle(store.showMascot ? Color.white.opacity(0.75) : Color.secondary)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(IconButtonStyle(onDark: store.showMascot, active: store.keepPanelOpen))
                 .help(store.keepPanelOpen ? "Panel stays open" : "Keep panel open")
             }
         }
@@ -233,6 +324,11 @@ struct WatcherHeader: View {
         .contentShape(Rectangle())
         .onTapGesture {
             guard store.showMascot else { return }
+            // Clicking a blip opens that server; clicking empty scope sends a ping.
+            if let id = store.radarHover, let entry = store.entries.first(where: { $0.id == id }) {
+                if entry.speaksHTTP { store.open(entry) } else { store.copyURL(entry) }
+                return
+            }
             quipSeed += 1
             store.poke()
         }
@@ -297,6 +393,42 @@ struct PillButtonStyle: ButtonStyle {
             case .destructive: return Color.red.opacity(hovering ? 1 : 0.85)
             case .neutral: return Color.primary.opacity(hovering ? 0.18 : 0.08)
             }
+        }
+    }
+}
+
+/// Borderless icon button with a soft circular hover fill. `onDark` tunes it for the radar card.
+struct IconButtonStyle: ButtonStyle {
+    var onDark = false
+    var active = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        Icon(configuration: configuration, onDark: onDark, active: active)
+    }
+
+    private struct Icon: View {
+        let configuration: Configuration
+        let onDark: Bool
+        let active: Bool
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .font(.body)
+                .foregroundStyle(foreground)
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(base.opacity(hovering ? 0.16 : 0)))
+                .opacity(configuration.isPressed ? 0.6 : 1)
+                .contentShape(Circle())
+                .onHover { hovering = $0 }
+                .animation(.easeOut(duration: 0.12), value: hovering)
+        }
+
+        private var base: Color { onDark ? .white : .primary }
+
+        private var foreground: Color {
+            if active { return onDark ? .white : .accentColor }
+            return base.opacity(hovering ? 1 : (onDark ? 0.8 : 0.65))
         }
     }
 }

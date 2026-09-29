@@ -13,7 +13,6 @@ struct RadarView: View {
     static let scopeBackground = Color(red: 0.04, green: 0.12, blue: 0.08)
 
     private let radius: CGFloat = 150
-    private let period: Double = 4
     private let phosphor = Color(red: 0.36, green: 0.90, blue: 0.50)
     /// Keeps blips this far from the card edges.
     private let margin: CGFloat = 10
@@ -25,19 +24,54 @@ struct RadarView: View {
         let arcFraction: Double
         let radiusFraction: Double
         let detached: Bool
+        /// Seconds since this server vanished, nil while it is alive.
+        var departedAge: Double? = nil
+    }
+
+    /// Sweep timing that stays continuous when the period changes (slow sweep on an empty scope).
+    private struct SweepClock {
+        var period: Double = 4
+        var baseAngle: Double = 0
+        var epoch: Date = Date()
+
+        func angle(at date: Date) -> Double {
+            (baseAngle + date.timeIntervalSince(epoch) / period * 360).truncatingRemainder(dividingBy: 360)
+        }
+
+        mutating func setPeriod(_ newPeriod: Double, at date: Date) {
+            guard newPeriod != period else { return }
+            baseAngle = angle(at: date)
+            epoch = date
+            period = newPeriod
+        }
+    }
+
+    @State private var clock = SweepClock()
+
+    private func blip(for entry: ServerEntry) -> Blip {
+        Blip(
+            id: entry.id,
+            port: entry.port,
+            arcFraction: Double((entry.port * 47) % 97) / 96,
+            radiusFraction: 0.4 + 0.55 * (Double(entry.port) * 0.6180339887).truncatingRemainder(dividingBy: 1),
+            detached: entry.isDetached)
     }
 
     private var blips: [Blip] {
         store.entries
             .filter { store.isShownByDefault($0) }
-            .map { entry in
-                Blip(
-                    id: entry.id,
-                    port: entry.port,
-                    arcFraction: Double((entry.port * 47) % 97) / 96,
-                    radiusFraction: 0.4 + 0.55 * (Double(entry.port) * 0.6180339887).truncatingRemainder(dividingBy: 1),
-                    detached: entry.isDetached)
-            }
+            .map(blip(for:))
+    }
+
+    /// Blips for servers that just vanished, fading out over 1.2 s.
+    private func departedBlips(at date: Date) -> [Blip] {
+        store.departed.compactMap { departure in
+            let age = date.timeIntervalSince(departure.at)
+            guard age >= 0, age < 1.2, store.isShownByDefault(departure.entry) else { return nil }
+            var blip = blip(for: departure.entry)
+            blip.departedAge = age
+            return blip
+        }
     }
 
     var body: some View {
@@ -47,11 +81,17 @@ struct RadarView: View {
             let hovered = hoveredBlip(in: frame, blips: currentBlips)
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !store.isActive || reduceMotion)) { timeline in
                 Canvas { context, size in
-                    drawScope(&context, size: size, date: timeline.date, blips: currentBlips)
+                    drawScope(
+                        &context, size: size, date: timeline.date,
+                        blips: currentBlips + departedBlips(at: timeline.date))
                 }
             }
             .onChange(of: hovered) { _, newValue in
                 store.radarHover = newValue
+            }
+            .onChange(of: currentBlips.isEmpty, initial: true) { _, empty in
+                // Nothing to find: the beam relaxes to a slow patrol.
+                clock.setPeriod(empty ? 9 : 4, at: Date())
             }
         }
         .accessibilityElement()
@@ -113,9 +153,7 @@ struct RadarView: View {
         cross.addLine(to: CGPoint(x: center.x, y: center.y + radius))
         context.stroke(cross, with: .color(phosphor.opacity(0.14)), lineWidth: 0.75)
 
-        let sweep = reduceMotion
-            ? 230.0
-            : date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period * 360
+        let sweep = reduceMotion ? 230.0 : clock.angle(at: date)
 
         // Fading trail behind the leading edge.
         if !reduceMotion {
@@ -150,9 +188,26 @@ struct RadarView: View {
             let intensity = reduceMotion ? 0.9 : 1 - 0.7 * delta / 360
             let highlighted = store.highlightedID == blip.id
             let color = blip.detached ? Color.orange : phosphor
-            let dot: CGFloat = highlighted ? 3.5 : 2.2
+            var dot: CGFloat = highlighted ? 3.5 : 2.2
+            var alpha = 0.35 + 0.65 * intensity
 
-            context.fill(circle(center: position, radius: dot), with: .color(color.opacity(0.35 + 0.65 * intensity)))
+            if blip.detached, !reduceMotion {
+                // Orphans throb slowly so they stand out without a label.
+                let throb = 0.5 + 0.5 * sin(date.timeIntervalSinceReferenceDate * 2 * .pi / 2.2)
+                dot += CGFloat(throb) * 1.2
+                alpha = min(1, alpha + 0.25 * throb)
+            }
+            if let age = blip.departedAge {
+                // Contact lost: fade and shrink.
+                let remaining = 1 - age / 1.2
+                alpha *= remaining
+                dot *= CGFloat(0.5 + 0.5 * remaining)
+                context.stroke(
+                    circle(center: position, radius: dot + 3 + 6 * CGFloat(age / 1.2)),
+                    with: .color(color.opacity(0.5 * remaining)), lineWidth: 1)
+            }
+
+            context.fill(circle(center: position, radius: dot), with: .color(color.opacity(alpha)))
 
             if let arrival = store.lastArrival, arrival.id == blip.id, let arrived = store.lastArrivalDate {
                 let age = date.timeIntervalSince(arrived)
@@ -162,7 +217,7 @@ struct RadarView: View {
                         with: .color(Color.white.opacity(1 - age / 1.6)), lineWidth: 1.5)
                 }
             }
-            if highlighted {
+            if highlighted, blip.departedAge == nil {
                 context.stroke(
                     circle(center: position, radius: dot + 4),
                     with: .color(Color.white.opacity(0.9)), lineWidth: 1)

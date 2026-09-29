@@ -19,6 +19,10 @@ struct LocalhostPanelApp: App {
             }
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            SettingsView(store: store)
+        }
     }
 }
 
