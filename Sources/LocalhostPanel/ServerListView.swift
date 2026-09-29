@@ -84,6 +84,7 @@ struct ServerListView: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
                 }
                 .frame(height: min(listHeight, maxListHeight))
+                .animation(.smooth(duration: 0.3), value: listHeight)
                 .animation(.spring(duration: 0.35), value: groups.map(\.id))
             }
             if !store.recentlyStopped.isEmpty {
@@ -263,7 +264,6 @@ struct ServerRow: View {
         }
         .opacity(isStopping ? 0.55 : (store.isShownByDefault(entry) ? 1 : 0.5))
         .contextMenu { menu }
-        .animation(.easeInOut(duration: 0.2), value: expanded)
     }
 
     private var background: some View {

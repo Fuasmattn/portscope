@@ -294,7 +294,10 @@ final class ServerStore: ObservableObject {
     }
 
     func toggleDetails(_ entry: ServerEntry) {
-        if expandedIDs.contains(entry.id) { expandedIDs.remove(entry.id) } else { expandedIDs.insert(entry.id) }
+        // One animation at the source so the row, its neighbours, and the list height move together.
+        withAnimation(.smooth(duration: 0.3)) {
+            if expandedIDs.contains(entry.id) { expandedIDs.remove(entry.id) } else { expandedIDs.insert(entry.id) }
+        }
     }
 
     // MARK: Actions
