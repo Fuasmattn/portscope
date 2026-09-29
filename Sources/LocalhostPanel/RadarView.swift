@@ -28,27 +28,8 @@ struct RadarView: View {
         var departedAge: Double? = nil
     }
 
-    /// Sweep timing that stays continuous when the period changes (slow sweep on an empty scope).
-    private struct SweepClock {
-        var period: Double = 4
-        var baseAngle: Double = 0
-        var epoch: Date = Date()
 
-        func angle(at date: Date) -> Double {
-            (baseAngle + date.timeIntervalSince(epoch) / period * 360).truncatingRemainder(dividingBy: 360)
-        }
-
-        mutating func setPeriod(_ newPeriod: Double, at date: Date) {
-            guard newPeriod != period else { return }
-            baseAngle = angle(at: date)
-            epoch = date
-            period = newPeriod
-        }
-    }
-
-    @State private var clock = SweepClock()
-
-    private func blip(for entry: ServerEntry) -> Blip {
+    static func blip(for entry: ServerEntry) -> Blip {
         Blip(
             id: entry.id,
             port: entry.port,
@@ -57,14 +38,16 @@ struct RadarView: View {
             detached: entry.isDetached)
     }
 
-    private var blips: [Blip] {
+    static func blips(in store: ServerStore) -> [Blip] {
         store.entries
             .filter { store.isShownByDefault($0) }
             .map(blip(for:))
     }
 
+    private var blips: [Blip] { Self.blips(in: store) }
+
     /// Blips for servers that just vanished, fading out over 1.2 s.
-    private func departedBlips(at date: Date) -> [Blip] {
+    static func departedBlips(in store: ServerStore, at date: Date) -> [Blip] {
         store.departed.compactMap { departure in
             let age = date.timeIntervalSince(departure.at)
             guard age >= 0, age < 1.2, store.isShownByDefault(departure.entry) else { return nil }
@@ -73,6 +56,8 @@ struct RadarView: View {
             return blip
         }
     }
+
+    private func departedBlips(at date: Date) -> [Blip] { Self.departedBlips(in: store, at: date) }
 
     var body: some View {
         GeometryReader { geo in
@@ -91,7 +76,7 @@ struct RadarView: View {
             }
             .onChange(of: currentBlips.isEmpty, initial: true) { _, empty in
                 // Nothing to find: the beam relaxes to a slow patrol.
-                clock.setPeriod(empty ? 9 : 4, at: Date())
+                store.sweepClock.setPeriod(empty ? 9 : 4, at: Date())
             }
         }
         .accessibilityElement()
@@ -101,13 +86,19 @@ struct RadarView: View {
 
     // MARK: Geometry
 
-    private func center(in size: CGSize) -> CGPoint {
+    private func center(in size: CGSize) -> CGPoint { Self.center(in: size) }
+
+    static func center(in size: CGSize) -> CGPoint {
         CGPoint(x: size.width, y: 0)
+    }
+
+    private func placement(of blip: Blip, in size: CGSize) -> (position: CGPoint, angle: Double) {
+        Self.placement(of: blip, in: size, radius: radius, margin: margin)
     }
 
     /// Where a blip lands: on its ring, somewhere along the part of that ring that lies inside the card.
     /// Degrees are 0 = up, clockwise; the visible arc runs from straight down (180) to straight left (270).
-    private func placement(of blip: Blip, in size: CGSize) -> (position: CGPoint, angle: Double) {
+    static func placement(of blip: Blip, in size: CGSize, radius: CGFloat, margin: CGFloat) -> (position: CGPoint, angle: Double) {
         let center = center(in: size)
         let ring = radius * CGFloat(blip.radiusFraction)
         // Angle (from the left horizontal, going down) at which this ring meets the card's bottom edge.
@@ -153,7 +144,7 @@ struct RadarView: View {
         cross.addLine(to: CGPoint(x: center.x, y: center.y + radius))
         context.stroke(cross, with: .color(phosphor.opacity(0.14)), lineWidth: 0.75)
 
-        let sweep = reduceMotion ? 230.0 : clock.angle(at: date)
+        let sweep = reduceMotion ? 230.0 : store.sweepClock.angle(at: date)
 
         // Fading trail behind the leading edge.
         if !reduceMotion {
@@ -240,14 +231,104 @@ struct RadarView: View {
         Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
     }
 
-    private func offset(radius: CGFloat, degrees: Double) -> CGPoint {
+    static func offset(radius: CGFloat, degrees: Double) -> CGPoint {
         let radians = CGFloat(degrees * Double.pi / 180)
         return CGPoint(x: radius * sin(radians), y: -radius * cos(radians))
     }
 
-    private func point(center: CGPoint, radius: CGFloat, degrees: Double) -> CGPoint {
+    static func point(center: CGPoint, radius: CGFloat, degrees: Double) -> CGPoint {
         let delta = offset(radius: radius, degrees: degrees)
         return CGPoint(x: center.x + delta.x, y: center.y + delta.y)
+    }
+
+    private func offset(radius: CGFloat, degrees: Double) -> CGPoint { Self.offset(radius: radius, degrees: degrees) }
+    private func point(center: CGPoint, radius: CGFloat, degrees: Double) -> CGPoint {
+        Self.point(center: center, radius: radius, degrees: degrees)
+    }
+}
+
+/// Sweep timing that stays continuous when the period changes (slow sweep on an empty scope).
+struct SweepClock {
+    var period: Double = 4
+    var baseAngle: Double = 0
+    var epoch: Date = Date()
+
+    func angle(at date: Date) -> Double {
+        (baseAngle + date.timeIntervalSince(epoch) / period * 360).truncatingRemainder(dividingBy: 360)
+    }
+
+    mutating func setPeriod(_ newPeriod: Double, at date: Date) {
+        guard newPeriod != period else { return }
+        baseAngle = angle(at: date)
+        epoch = date
+        period = newPeriod
+    }
+}
+
+/// The glow that leaks out of the radar card into the panel: the same beam and blips, drawn larger,
+/// blurred, and faint, behind the card. Sized to the card plus `bleed` on every side.
+struct RadarSpill: View {
+    @ObservedObject var store: ServerStore
+    let bleed: CGFloat
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private let radius: CGFloat = 150
+    private let phosphor = Color(red: 0.36, green: 0.90, blue: 0.50)
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !store.isActive || reduceMotion)) { timeline in
+            Canvas { context, size in
+                draw(&context, size: size, date: timeline.date)
+            }
+        }
+        .blur(radius: 18)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func draw(_ context: inout GraphicsContext, size: CGSize, date: Date) {
+        let card = CGSize(width: size.width - 2 * bleed, height: size.height - 2 * bleed)
+        let shift = CGPoint(x: bleed, y: bleed)
+        let center = RadarView.center(in: card).applying(CGAffineTransform(translationX: shift.x, y: shift.y))
+        let sweep = reduceMotion ? 230.0 : store.sweepClock.angle(at: date)
+        let reach = radius + bleed
+
+        // Beam: wide and soft, brightest at the leading edge.
+        for step in 0..<20 {
+            var line = Path()
+            line.move(to: center)
+            line.addLine(to: RadarView.point(center: center, radius: reach, degrees: sweep - Double(step) * 2.5))
+            let alpha = 0.2 * (1 - Double(step) / 20)
+            context.stroke(line, with: .color(phosphor.opacity(alpha)), lineWidth: 10)
+        }
+
+        // Contacts: a halo that flares as the beam passes, so they shine through the card edge.
+        let blips = RadarView.blips(in: store) + RadarView.departedBlips(in: store, at: date)
+        for blip in blips {
+            let (position, angle) = RadarView.placement(of: blip, in: card, radius: radius, margin: 10)
+            var delta = (sweep - angle).truncatingRemainder(dividingBy: 360)
+            if delta < 0 { delta += 360 }
+            var intensity = reduceMotion ? 0.6 : 1 - 0.8 * delta / 360
+            if let age = blip.departedAge { intensity *= 1 - age / 1.2 }
+            let color = blip.detached ? Color.orange : phosphor
+            let halo: CGFloat = 14
+            let p = CGPoint(x: position.x + shift.x, y: position.y + shift.y)
+            context.fill(
+                Path(ellipseIn: CGRect(x: p.x - halo, y: p.y - halo, width: halo * 2, height: halo * 2)),
+                with: .color(color.opacity(0.45 * intensity)))
+        }
+
+        // Manual ping leaks out too.
+        if let ping = store.pingDate {
+            let age = date.timeIntervalSince(ping)
+            if age >= 0, age < 1.2 {
+                let r = reach * CGFloat(age / 1.2)
+                context.stroke(
+                    Path(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)),
+                    with: .color(phosphor.opacity(0.5 * (1 - age / 1.2))), lineWidth: 6)
+            }
+        }
     }
 }
 
