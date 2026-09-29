@@ -86,7 +86,7 @@ struct ServerListView: View {
                 .frame(height: min(listHeight, maxListHeight))
                 .animation(.spring(duration: 0.35), value: groups.map(\.id))
             }
-            if !store.recentlyStopped.isEmpty {
+            if !store.history.entries.isEmpty {
                 Divider()
                 RecentlyStoppedSection(store: store)
             }
@@ -205,7 +205,7 @@ struct ServerRow: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        if store.pinnedPorts.contains(entry.port) {
+                        if store.rules.pinnedPorts.contains(entry.port) {
                             Image(systemName: "pin.fill")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
@@ -259,7 +259,7 @@ struct ServerRow: View {
             .frame(height: rowHeight)
             .contentShape(Rectangle())
             .onTapGesture {
-                if store.rowClickOpens, entry.speaksHTTP { store.open(entry) } else { store.toggleDetails(entry) }
+                if store.settings.rowClickOpens, entry.speaksHTTP { store.open(entry) } else { store.toggleDetails(entry) }
             }
         .padding(.horizontal, 12)
         .background(background)
@@ -311,7 +311,7 @@ struct ServerRow: View {
 
     @ViewBuilder
     private func launcherBadge(_ launcher: String) -> some View {
-        if let icon = store.launcherIcon(for: launcher) {
+        if let icon = Launchers.icon(for: launcher) {
             Image(nsImage: icon)
                 .resizable()
                 .frame(width: 13, height: 13)
@@ -379,7 +379,7 @@ struct ServerRow: View {
         Button("Copy port") { store.copyPort(entry) }
         if entry.cwd != nil {
             Divider()
-            let editors = store.installedEditors
+            let editors = Launchers.installedEditors
             if !editors.isEmpty {
                 Menu("Open project in") {
                     ForEach(editors) { editor in
@@ -390,17 +390,17 @@ struct ServerRow: View {
             Button("Reveal working directory") { store.revealWorkingDirectory(entry) }
         }
         Divider()
-        Button(store.pinnedPorts.contains(entry.port) ? "Unpin" : "Pin (always show)") { store.togglePin(entry) }
-        Button(store.hiddenProcesses.contains(entry.processName)
+        Button(store.rules.pinnedPorts.contains(entry.port) ? "Unpin" : "Pin (always show)") { store.rules.togglePin(entry) }
+        Button(store.rules.hiddenProcesses.contains(entry.processName)
                ? "Unhide all \(entry.processName)" : "Hide all \(entry.processName)") {
-            store.toggleHiddenProcess(entry)
+            store.rules.toggleHiddenProcess(entry)
         }
-        Button(store.hiddenPorts.contains(entry.port) ? "Unhide port \(String(entry.port))" : "Hide port \(String(entry.port))") {
-            store.toggleHidden(entry)
+        Button(store.rules.hiddenPorts.contains(entry.port) ? "Unhide port \(String(entry.port))" : "Hide port \(String(entry.port))") {
+            store.rules.toggleHidden(entry)
         }
         if let cwd = entry.cwd {
-            Button(store.hiddenFolders.contains(cwd) ? "Unhide project \(entry.projectName)" : "Hide project \(entry.projectName)") {
-                store.toggleHiddenFolder(entry)
+            Button(store.rules.hiddenFolders.contains(cwd) ? "Unhide project \(entry.projectName)" : "Hide project \(entry.projectName)") {
+                store.rules.toggleHiddenFolder(entry)
             }
         }
         Divider()
@@ -485,7 +485,7 @@ private struct RecentlyStoppedSection: View {
                         .rotationEffect(.degrees(open ? 90 : 0))
                     Text("Recently stopped")
                         .font(.caption.weight(.semibold))
-                    Text("\(store.recentlyStopped.count)")
+                    Text("\(store.history.entries.count)")
                         .font(.caption.monospacedDigit())
                     Spacer()
                 }
@@ -496,7 +496,7 @@ private struct RecentlyStoppedSection: View {
             }
             .buttonStyle(.plain)
             if open {
-                ForEach(store.recentlyStopped) { stopped in
+                ForEach(store.history.entries) { stopped in
                     StoppedRow(stopped: stopped, store: store)
                 }
             }
@@ -529,7 +529,7 @@ private struct StoppedRow: View {
             Button("Start again") { store.startAgain(stopped) }
                 .buttonStyle(PillButtonStyle(role: .neutral))
                 .help("Run the same command in \(stopped.cwd ?? "the same folder")")
-            Button { store.forget(stopped) } label: { Image(systemName: "xmark") }
+            Button { store.history.forget(stopped) } label: { Image(systemName: "xmark") }
                 .buttonStyle(IconButtonStyle())
                 .help("Forget")
                 .opacity(hovering ? 1 : 0)
@@ -554,14 +554,14 @@ struct WatcherHeader: View {
                 HStack(spacing: 6) {
                     Text("Localhost")
                         .font(.headline)
-                        .foregroundStyle(store.showMascot ? Color.white : Color.primary)
+                        .foregroundStyle(store.settings.showMascot ? Color.white : Color.primary)
                     Text("\(store.badgeCount)")
                         .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(store.showMascot ? Color.white.opacity(0.65) : Color.secondary)
+                        .foregroundStyle(store.settings.showMascot ? Color.white.opacity(0.65) : Color.secondary)
                         .contentTransition(.numericText())
                         .animation(.default, value: store.badgeCount)
                 }
-                if store.showMascot {
+                if store.settings.showMascot {
                     TimelineView(.periodic(from: .now, by: 0.55)) { timeline in
                         let on = Int(timeline.date.timeIntervalSinceReferenceDate / 0.55) % 2 == 0
                         HStack(alignment: .firstTextBaseline, spacing: 1) {
@@ -581,7 +581,7 @@ struct WatcherHeader: View {
             Spacer()
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: store.showMascot ? 80 : 0, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: store.settings.showMascot ? 80 : 0, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture {
             if !isPanel { headerClicked() }
@@ -593,7 +593,7 @@ struct WatcherHeader: View {
             }
         }
         .background {
-            if store.showMascot {
+            if store.settings.showMascot {
                 RadarView(store: store, pointer: pointer)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
             }
@@ -601,7 +601,7 @@ struct WatcherHeader: View {
         .panelGlass(cornerRadius: 16)
         .padding(8)
         .contextMenu {
-            Toggle("Show the radar", isOn: $store.showMascot)
+            Toggle("Show the radar", isOn: Binding(get: { store.settings.showMascot }, set: { store.settings.showMascot = $0 }))
         }
         .task {
             // Rotate the commentary every so often.
@@ -614,7 +614,7 @@ struct WatcherHeader: View {
 
     /// Clicking a blip opens that server; clicking empty scope sends a ping.
     private func headerClicked() {
-        guard store.showMascot else { return }
+        guard store.settings.showMascot else { return }
         if let id = store.radarHover, let entry = store.entries.first(where: { $0.id == id }) {
             if entry.speaksHTTP { store.open(entry) } else { store.copyURL(entry) }
             return

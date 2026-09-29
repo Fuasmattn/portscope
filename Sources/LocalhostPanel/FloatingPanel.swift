@@ -30,7 +30,7 @@ final class FloatingPanelController {
     private func show() {
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        if ServerStore.shared.rememberPanelPosition, let saved = savedOrigin, fits(saved, panel) {
+        if ServerStore.shared.settings.rememberPanelPosition, let saved = savedOrigin, fits(saved, panel) {
             panel.setFrameOrigin(saved)
         } else {
             position(panel)

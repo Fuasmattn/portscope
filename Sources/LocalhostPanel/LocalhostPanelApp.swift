@@ -15,7 +15,7 @@ struct LocalhostPanelApp: App {
             HStack(spacing: 3) {
                 Image(nsImage: RadarGlyph.image)
                     .symbolEffect(.bounce, value: store.badgeCount)
-                switch store.badgeStyle {
+                switch store.settings.badgeStyle {
                 case .count:
                     Text("\(store.badgeCount)")
                         .monospacedDigit()
@@ -49,8 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let store = ServerStore.shared
             store.start()
 
-            registerHotKey(store.hotKey)
-            store.$hotKey
+            registerHotKey(store.settings.hotKey)
+            store.settings.$hotKey
                 .dropFirst()
                 .removeDuplicates()
                 .sink { [weak self] binding in self?.registerHotKey(binding) }

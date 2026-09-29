@@ -5,25 +5,31 @@ import SwiftUI
 /// The Settings window: hotkey, panel behaviour, menu bar badge, refresh rate, radar.
 struct SettingsView: View {
     @ObservedObject var store: ServerStore
+    @ObservedObject var settings: PanelSettings
+
+    init(store: ServerStore) {
+        self.store = store
+        self.settings = store.settings
+    }
 
     var body: some View {
         Form {
             Section {
                 LabeledContent("Toggle panel") {
-                    HotKeyRecorder(binding: $store.hotKey)
+                    HotKeyRecorder(binding: $settings.hotKey)
                 }
-                Toggle("Reopen panel where I left it", isOn: $store.rememberPanelPosition)
+                Toggle("Reopen panel where I left it", isOn: $settings.rememberPanelPosition)
             }
             Section {
-                Picker("Menu bar shows", selection: $store.badgeStyle) {
+                Picker("Menu bar shows", selection: $settings.badgeStyle) {
                     ForEach(BadgeStyle.allCases) { style in
                         Text(style.label).tag(style)
                     }
                 }
-                Toggle("Show the radar", isOn: $store.showMascot)
+                Toggle("Show the radar", isOn: $settings.showMascot)
             }
             Section {
-                Picker("Clicking a row", selection: $store.rowClickOpens) {
+                Picker("Clicking a row", selection: $settings.rowClickOpens) {
                     Text("Shows details").tag(false)
                     Text("Opens in browser").tag(true)
                 }
@@ -32,7 +38,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
-                Picker("Refresh while open", selection: $store.activeRefreshInterval) {
+                Picker("Refresh while open", selection: $settings.activeRefreshInterval) {
                     Text("Every second").tag(1.0)
                     Text("Every 2 seconds").tag(2.0)
                     Text("Every 5 seconds").tag(5.0)
@@ -41,8 +47,8 @@ struct SettingsView: View {
             }
             Section {
                 LabeledContent("Hidden servers") {
-                    Button("Reset \(store.hiddenRuleCount) rules") { store.resetHidden() }
-                        .disabled(store.hiddenRuleCount == 0)
+                    Button("Reset \(store.rules.hiddenRuleCount) rules") { store.resetHidden() }
+                        .disabled(store.rules.hiddenRuleCount == 0)
                 }
                 Text("Ports, processes, and projects you hid from the list. System noise stays hidden.")
                     .font(.caption)
