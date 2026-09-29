@@ -27,23 +27,44 @@ final class FloatingPanelController {
         }
     }
 
-    /// Resizes the window to the content, keeping the top-left corner where it is.
+    private var contentSize: CGSize = .zero
+    private var shrink: DispatchWorkItem?
+
+    /// The window is transparent, so it can be larger than the card without showing. Growing
+    /// happens at once (the card animates inside); shrinking waits until the collapse animation
+    /// has settled, so the window edge never fights SwiftUI's spring.
     fileprivate func contentSizeChanged(_ size: CGSize) {
-        guard let panel = panel, size.width > 0, size.height > 0 else { return }
+        guard size.width > 0, size.height > 0 else { return }
+        contentSize = size
+        guard let panel = panel else { return }
+        panel.invalidateShadow()
+        shrink?.cancel()
+        if size.height > panel.frame.height + 0.5 || abs(size.width - panel.frame.width) > 0.5 {
+            resize(panel, to: size)
+        } else if size.height < panel.frame.height - 0.5 {
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self, let panel = self.panel else { return }
+                self.resize(panel, to: self.contentSize)
+            }
+            shrink = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
+        }
+    }
+
+    /// Keeps the top-left corner where it is.
+    private func resize(_ panel: NSPanel, to size: CGSize) {
         var frame = panel.frame
-        guard abs(frame.height - size.height) > 0.5 || abs(frame.width - size.width) > 0.5 else { return }
         frame.origin.y = frame.maxY - size.height
         frame.size = size
         panel.setFrame(frame, display: true, animate: false)
+        panel.invalidateShadow()
     }
 
     private func show() {
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        if let content = panel.contentView {
-            let size = content.fittingSize
-            if size.height > 0 { panel.setContentSize(size) }
-        }
+        let size = contentSize.height > 0 ? contentSize : (panel.contentView?.fittingSize ?? .zero)
+        if size.height > 0 { panel.setContentSize(size) }
         if ServerStore.shared.rememberPanelPosition, let saved = savedOrigin, fits(saved, panel) {
             panel.setFrameOrigin(saved)
         } else {
