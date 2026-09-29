@@ -247,9 +247,10 @@ struct ServerRow: View {
 
             if expanded {
                 details
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity)
             }
         }
+        .clipped()
         .padding(.horizontal, 12)
         .background(background)
         .onHover { inside in
@@ -262,7 +263,7 @@ struct ServerRow: View {
         }
         .opacity(isStopping ? 0.55 : (store.isShownByDefault(entry) ? 1 : 0.5))
         .contextMenu { menu }
-        .animation(.easeOut(duration: 0.18), value: expanded)
+        .animation(.easeInOut(duration: 0.2), value: expanded)
     }
 
     private var background: some View {
