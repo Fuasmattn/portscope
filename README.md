@@ -13,6 +13,14 @@ swift build -c release
 .build/release/LocalhostPanel
 ```
 
+Start at login without an app bundle or signing, via a LaunchAgent:
+
+```sh
+make install     # builds release, copies to ~/.local/bin, loads the agent
+make restart     # after pulling changes
+make uninstall
+```
+
 Run the tests:
 
 ```sh
