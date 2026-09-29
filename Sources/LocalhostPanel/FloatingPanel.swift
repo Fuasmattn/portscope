@@ -34,25 +34,23 @@ final class FloatingPanelController {
     }
 
     private func makePanel() -> KeyablePanel {
+        // Borderless: no title bar, so the window is exactly the size of the list. Corners and
+        // shadow are ours.
         let root = ServerListView(store: ServerStore.shared, isPanel: true)
             .background(.regularMaterial)
-            // The hidden title bar still reserves a safe area; the list should start at the very top.
-            .ignoresSafeArea()
+            .clipShape(RoundedRectangle(cornerRadius: 14))
         let controller = NSHostingController(rootView: root)
         controller.sizingOptions = [.preferredContentSize]
 
         let panel = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 200),
-            styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView],
+            styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false)
         panel.contentViewController = controller
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.standardWindowButton(.closeButton)?.isHidden = true
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.standardWindowButton(.zoomButton)?.isHidden = true
-        panel.titlebarSeparatorStyle = .none
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.hidesOnDeactivate = false
@@ -81,5 +79,51 @@ final class FloatingPanelController {
         origin.x = min(max(origin.x, visible.minX + 8), visible.maxX - size.width - 8)
         origin.y = min(max(origin.y, visible.minY + 8), visible.maxY - size.height - 8)
         panel.setFrameOrigin(origin)
+    }
+}
+
+/// Transparent layer that drags the window when the mouse moves and reports a plain click otherwise.
+/// Lets the radar card move the panel while still taking clicks for pings and blips.
+struct WindowDragArea: NSViewRepresentable {
+    var onClick: () -> Void
+
+    func makeNSView(context: Context) -> DragView {
+        let view = DragView()
+        view.onClick = onClick
+        return view
+    }
+
+    func updateNSView(_ view: DragView, context: Context) {
+        view.onClick = onClick
+    }
+
+    final class DragView: NSView {
+        var onClick: (() -> Void)?
+        private var pressStart: NSPoint?
+
+        override var mouseDownCanMoveWindow: Bool { false }
+
+        override func mouseDown(with event: NSEvent) {
+            pressStart = event.locationInWindow
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            guard let start = pressStart else { return }
+            let moved = hypot(event.locationInWindow.x - start.x, event.locationInWindow.y - start.y)
+            if moved > 3 {
+                pressStart = nil
+                window?.performDrag(with: event)
+            }
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            if pressStart != nil { onClick?() }
+            pressStart = nil
+        }
+
+        override func rightMouseDown(with event: NSEvent) {
+            // Leave context menus to SwiftUI.
+            nextResponder?.rightMouseDown(with: event)
+        }
     }
 }

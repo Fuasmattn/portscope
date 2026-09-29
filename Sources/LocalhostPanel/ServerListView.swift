@@ -323,14 +323,13 @@ struct WatcherHeader: View {
         .frame(maxWidth: .infinity, minHeight: store.showMascot ? 80 : 0, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture {
-            guard store.showMascot else { return }
-            // Clicking a blip opens that server; clicking empty scope sends a ping.
-            if let id = store.radarHover, let entry = store.entries.first(where: { $0.id == id }) {
-                if entry.speaksHTTP { store.open(entry) } else { store.copyURL(entry) }
-                return
+            if !isPanel { headerClicked() }
+        }
+        .overlay {
+            // In the floating panel the card doubles as the drag handle.
+            if isPanel {
+                WindowDragArea(onClick: headerClicked)
             }
-            quipSeed += 1
-            store.poke()
         }
         .background {
             if store.showMascot {
@@ -350,6 +349,17 @@ struct WatcherHeader: View {
                 quipSeed += 1
             }
         }
+    }
+
+    /// Clicking a blip opens that server; clicking empty scope sends a ping.
+    private func headerClicked() {
+        guard store.showMascot else { return }
+        if let id = store.radarHover, let entry = store.entries.first(where: { $0.id == id }) {
+            if entry.speaksHTTP { store.open(entry) } else { store.copyURL(entry) }
+            return
+        }
+        quipSeed += 1
+        store.poke()
     }
 
     private var quip: String {
