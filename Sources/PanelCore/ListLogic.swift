@@ -55,4 +55,43 @@ public enum ListLogic {
             return (lhs.entries.map(port).min() ?? 0) < (rhs.entries.map(port).min() ?? 0)
         }
     }
+
+    /// Result of folding same-port, same-folder processes onto one row.
+    public struct PortMerge<Entry> {
+        /// Entries with duplicates removed; the survivor of each group is the lowest PID.
+        public let collapsed: [Entry]
+        /// Absorbed entries, keyed by the id of the survivor they were folded into.
+        public let siblings: [String: [Entry]]
+    }
+
+    /// Same port and same folder is almost always one app listening on IPv4 and IPv6 from two
+    /// processes, or a parent and its worker. Entries without a folder never merge.
+    public static func mergeByPort<Entry>(
+        _ entries: [Entry], id: (Entry) -> String, port: (Entry) -> Int, folder: (Entry) -> String?, pid: (Entry) -> Int32
+    ) -> PortMerge<Entry> {
+        var buckets: [String: [Entry]] = [:]
+        var order: [String] = []
+        for entry in entries.sorted(by: { pid($0) < pid($1) }) {
+            guard let folder = folder(entry) else { continue }
+            let key = "\(port(entry))|\(folder)"
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(entry)
+        }
+        var siblings: [String: [Entry]] = [:]
+        var absorbed: Set<String> = []
+        for key in order {
+            let group = buckets[key]!
+            guard group.count > 1 else { continue }
+            siblings[id(group[0])] = Array(group.dropFirst())
+            for entry in group.dropFirst() { absorbed.insert(id(entry)) }
+        }
+        return PortMerge(collapsed: entries.filter { !absorbed.contains(id($0)) }, siblings: siblings)
+    }
+
+    /// True when another visible row also listens on this port: a real conflict, not a merge.
+    public static func hasPortConflict<Entry>(
+        _ entry: Entry, in collapsed: [Entry], id: (Entry) -> String, port: (Entry) -> Int, shown: (Entry) -> Bool
+    ) -> Bool {
+        collapsed.contains { port($0) == port(entry) && id($0) != id(entry) && shown($0) }
+    }
 }

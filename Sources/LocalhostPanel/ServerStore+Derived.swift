@@ -7,37 +7,22 @@ extension ServerStore {
         rules.isShownByDefault(entry)
     }
 
-    /// Same port, same folder: almost always one app listening on IPv4 and IPv6 from two processes,
-    /// or a parent and its worker. Shown as one row; the others ride along for Stop.
-    /// Keyed by the row's entry id, values include the row's own entry.
-    var mergedByPort: [String: [ServerEntry]] {
-        var buckets: [String: [ServerEntry]] = [:]
-        for entry in entries.sorted(by: { $0.pid < $1.pid }) {
-            let key = "\(entry.port)|\(entry.cwd ?? "?\(entry.pid)")"
-            buckets[key, default: []].append(entry)
-        }
-        var merged: [String: [ServerEntry]] = [:]
-        for group in buckets.values where group.count > 1 {
-            merged[group[0].id] = group
-        }
-        return merged
+    /// Same port, same folder folded onto one row (see `ListLogic.mergeByPort`).
+    var portMerge: ListLogic.PortMerge<ServerEntry> {
+        ListLogic.mergeByPort(entries, id: \.id, port: \.port, folder: \.cwd, pid: \.pid)
     }
 
     /// Entries with port-and-folder duplicates collapsed onto their first process.
-    var collapsedEntries: [ServerEntry] {
-        let merged = mergedByPort
-        let absorbed = Set(merged.values.flatMap { $0.dropFirst() }.map(\.id))
-        return entries.filter { !absorbed.contains($0.id) }
-    }
+    var collapsedEntries: [ServerEntry] { portMerge.collapsed }
 
     /// Other processes folded into this row, if any.
     func siblings(of entry: ServerEntry) -> [ServerEntry] {
-        Array(mergedByPort[entry.id]?.dropFirst() ?? [])
+        portMerge.siblings[entry.id] ?? []
     }
 
     /// True when another project also listens on this port: a real conflict, not a merge.
     func hasPortConflict(_ entry: ServerEntry) -> Bool {
-        collapsedEntries.contains { $0.port == entry.port && $0.id != entry.id && isShownByDefault($0) }
+        ListLogic.hasPortConflict(entry, in: collapsedEntries, id: \.id, port: \.port, shown: isShownByDefault)
     }
 
     var visibleEntries: [ServerEntry] {
