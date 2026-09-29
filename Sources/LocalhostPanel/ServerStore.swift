@@ -6,6 +6,46 @@ enum Reaction {
     case idle, alert, lost
 }
 
+enum BadgeStyle: String, CaseIterable, Identifiable {
+    case count, dot, icon
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .count: return "Icon and count"
+        case .dot: return "Icon and dot"
+        case .icon: return "Icon only"
+        }
+    }
+}
+
+/// A global hotkey as Carbon wants it, plus a label for the UI.
+struct HotKeyBinding: Equatable, Codable {
+    var keyCode: Int
+    /// Carbon modifier mask (cmdKey, optionKey, controlKey, shiftKey).
+    var modifiers: Int
+
+    static let `default` = HotKeyBinding(keyCode: 37, modifiers: 4096 | 2048) // ⌃⌥L
+
+    var label: String {
+        var text = ""
+        if modifiers & 4096 != 0 { text += "⌃" }
+        if modifiers & 2048 != 0 { text += "⌥" }
+        if modifiers & 512 != 0 { text += "⇧" }
+        if modifiers & 256 != 0 { text += "⌘" }
+        return text + KeyNames.name(for: keyCode)
+    }
+}
+
+/// A server we stopped, remembered so it can be started again.
+struct StoppedServer: Codable, Identifiable, Equatable {
+    var id: String { "\(port):\(stoppedAt.timeIntervalSince1970)" }
+    let port: Int
+    let projectName: String
+    let commandLine: String
+    let cwd: String?
+    let stoppedAt: Date
+}
+
 @MainActor
 final class ServerStore: ObservableObject {
     static let shared = ServerStore()
@@ -39,6 +79,33 @@ final class ServerStore: ObservableObject {
     @Published private(set) var departed: [(entry: ServerEntry, at: Date)] = []
     /// Type-to-filter text for the list.
     @Published var filter = ""
+    /// Bumped when the filter field should take keyboard focus (⌘F).
+    @Published var filterFocusRequest = 0
+    /// Keyboard selection in the list.
+    @Published var selectedID: String?
+    /// Rows showing their details block.
+    @Published var expandedIDs: Set<String> = []
+    /// When the last scan finished, so uptimes can tick between scans.
+    @Published private(set) var lastScanDate = Date()
+    /// Servers stopped from here, newest first, so they can be started again.
+    @Published private(set) var recentlyStopped: [StoppedServer] {
+        didSet {
+            if let data = try? JSONEncoder().encode(recentlyStopped) {
+                UserDefaults.standard.set(data, forKey: "recentlyStopped")
+            }
+        }
+    }
+    @Published var badgeStyle: BadgeStyle {
+        didSet { UserDefaults.standard.set(badgeStyle.rawValue, forKey: "badgeStyle") }
+    }
+    @Published var rememberPanelPosition: Bool {
+        didSet { UserDefaults.standard.set(rememberPanelPosition, forKey: "rememberPanelPosition") }
+    }
+    @Published var hotKey: HotKeyBinding {
+        didSet {
+            if let data = try? JSONEncoder().encode(hotKey) { UserDefaults.standard.set(data, forKey: "hotKey") }
+        }
+    }
     /// Seconds between scans while a window is showing.
     @Published var activeRefreshInterval: Double {
         didSet { UserDefaults.standard.set(activeRefreshInterval, forKey: "activeRefreshInterval") }
@@ -57,19 +124,22 @@ final class ServerStore: ObservableObject {
         hiddenProcesses = Set(UserDefaults.standard.array(forKey: "hiddenProcesses") as? [String] ?? [])
         showMascot = UserDefaults.standard.object(forKey: "showMascot") as? Bool ?? true
         activeRefreshInterval = UserDefaults.standard.object(forKey: "activeRefreshInterval") as? Double ?? 2
+        badgeStyle = BadgeStyle(rawValue: UserDefaults.standard.string(forKey: "badgeStyle") ?? "") ?? .count
+        rememberPanelPosition = UserDefaults.standard.bool(forKey: "rememberPanelPosition")
+        hotKey = UserDefaults.standard.data(forKey: "hotKey")
+            .flatMap { try? JSONDecoder().decode(HotKeyBinding.self, from: $0) } ?? .default
+        recentlyStopped = UserDefaults.standard.data(forKey: "recentlyStopped")
+            .flatMap { try? JSONDecoder().decode([StoppedServer].self, from: $0) } ?? []
     }
 
     // MARK: Derived state
 
     var visibleEntries: [ServerEntry] {
-        let needle = filter.trimmingCharacters(in: .whitespaces).lowercased()
         let filtered = entries.filter { entry in
             guard showAll || isShownByDefault(entry) else { return false }
-            guard !needle.isEmpty else { return true }
-            return String(entry.port).contains(needle)
-                || entry.projectName.lowercased().contains(needle)
-                || entry.processName.lowercased().contains(needle)
-                || (entry.branch?.lowercased().contains(needle) ?? false)
+            return ListLogic.matches(
+                needle: filter, port: entry.port, projectName: entry.projectName,
+                processName: entry.processName, branch: entry.branch)
         }
         return filtered.sorted { lhs, rhs in
             let leftPinned = pinnedPorts.contains(lhs.port)
@@ -79,7 +149,14 @@ final class ServerStore: ObservableObject {
         }
     }
 
-    var highlightedID: String? { radarHover ?? rowHover }
+    var highlightedID: String? { radarHover ?? rowHover ?? selectedID }
+
+    /// Rows grouped by project when several servers share a working directory.
+    var groupedEntries: [ListLogic.Group<ServerEntry>] {
+        ListLogic.grouped(
+            visibleEntries, key: { $0.cwd }, title: { $0.projectName }, port: { $0.port },
+            pinned: { pinnedPorts.contains($0.port) })
+    }
 
     var badgeCount: Int {
         entries.filter { isShownByDefault($0) }.count
@@ -92,7 +169,12 @@ final class ServerStore: ObservableObject {
     /// True once a stop signal has gone unanswered long enough to offer SIGKILL.
     func isStuck(_ entry: ServerEntry, now: Date = Date()) -> Bool {
         guard let since = stopping[entry.id] else { return false }
-        return now.timeIntervalSince(since) > 4
+        return ListLogic.isStuck(signalledAt: since, now: now)
+    }
+
+    /// Uptime as of `now`, extrapolated from the last scan so it ticks between scans.
+    func liveUptime(_ entry: ServerEntry, now: Date) -> TimeInterval? {
+        entry.uptime.map { $0 + max(0, now.timeIntervalSince(lastScanDate)) }
     }
 
     /// Pinned always shows. Otherwise hidden if it looks like a system/app listener
@@ -120,6 +202,10 @@ final class ServerStore: ObservableObject {
 
     func viewAppeared() {
         Task { await refresh() }
+    }
+
+    func owns(_ window: NSWindow) -> Bool {
+        visibleWindows.contains(ObjectIdentifier(window))
     }
 
     func windowVisibilityChanged(_ window: NSWindow, visible: Bool) {
@@ -152,7 +238,58 @@ final class ServerStore: ObservableObject {
         withAnimation(.spring(duration: 0.35)) {
             entries = result
         }
+        lastScanDate = now
         hasScanned = true
+        if let selected = selectedID, !ids.contains(selected) { selectedID = nil }
+        expandedIDs = expandedIDs.filter(ids.contains)
+    }
+
+    // MARK: Keyboard
+
+    /// Handles a key press inside one of our windows. Returns true when consumed.
+    func handleKey(_ event: NSEvent) -> Bool {
+        let command = event.modifierFlags.contains(.command)
+        switch event.keyCode {
+        case 125: moveSelection(by: 1); return true       // ↓
+        case 126: moveSelection(by: -1); return true      // ↑
+        case 36, 76:                                      // ⏎
+            guard let entry = selectedEntry else { return false }
+            if entry.speaksHTTP { open(entry) } else { toggleDetails(entry) }
+            return true
+        case 49:                                          // space
+            guard let entry = selectedEntry else { return false }
+            toggleDetails(entry)
+            return true
+        case 51, 117:                                     // ⌫ ⌦, with ⌘ to stop
+            guard command, let entry = selectedEntry else { return false }
+            terminate(entry, force: event.modifierFlags.contains(.option))
+            return true
+        case 3 where command:                             // ⌘F
+            filterFocusRequest += 1
+            return true
+        case 53:                                          // Esc: clear filter first, then let the window close
+            if !filter.isEmpty { filter = ""; return true }
+            if selectedID != nil { selectedID = nil; return true }
+            return false
+        default:
+            return false
+        }
+    }
+
+    private var selectedEntry: ServerEntry? {
+        entries.first { $0.id == selectedID }
+    }
+
+    private func moveSelection(by delta: Int) {
+        let rows = groupedEntries.flatMap(\.entries)
+        guard !rows.isEmpty else { return }
+        let current = rows.firstIndex { $0.id == selectedID }
+        let next = current.map { min(max($0 + delta, 0), rows.count - 1) } ?? (delta > 0 ? 0 : rows.count - 1)
+        selectedID = rows[next].id
+    }
+
+    func toggleDetails(_ entry: ServerEntry) {
+        if expandedIDs.contains(entry.id) { expandedIDs.remove(entry.id) } else { expandedIDs.insert(entry.id) }
     }
 
     // MARK: Actions
@@ -205,6 +342,74 @@ final class ServerStore: ObservableObject {
             if let error = error {
                 Task { @MainActor in self.show("Could not open in \(editor.name): \(error.localizedDescription)") }
             }
+        }
+    }
+
+    func copy(_ text: String, label: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        show("Copied \(label)")
+    }
+
+    // MARK: Launcher icons
+
+    private static let launcherBundleIDs: [String: String] = [
+        "Claude": "com.anthropic.claudefordesktop",
+        "Cursor": "com.todesktop.230313mzl4w4u92",
+        "VS Code": "com.microsoft.VSCode",
+        "Zed": "dev.zed.Zed",
+        "Warp": "dev.warp.Warp-Stable",
+        "Ghostty": "com.mitchellh.ghostty",
+        "iTerm2": "com.googlecode.iterm2",
+        "WezTerm": "com.github.wez.wezterm",
+        "Terminal": "com.apple.Terminal",
+    ]
+    private var launcherIconCache: [String: NSImage?] = [:]
+
+    /// The app icon for a launcher label, if that launcher is an installed app.
+    func launcherIcon(for launcher: String) -> NSImage? {
+        if let cached = launcherIconCache[launcher] { return cached }
+        var icon: NSImage?
+        if let bundleID = Self.launcherBundleIDs[launcher],
+           let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            icon = NSWorkspace.shared.icon(forFile: url.path)
+        }
+        launcherIconCache[launcher] = icon
+        return icon
+    }
+
+    // MARK: Recently stopped
+
+    private func remember(_ entry: ServerEntry) {
+        let record = StoppedServer(
+            port: entry.port, projectName: entry.projectName, commandLine: entry.commandLine,
+            cwd: entry.cwd, stoppedAt: Date())
+        recentlyStopped.removeAll { $0.port == entry.port && $0.commandLine == entry.commandLine }
+        recentlyStopped.insert(record, at: 0)
+        recentlyStopped = Array(recentlyStopped.prefix(5))
+    }
+
+    func forget(_ stopped: StoppedServer) {
+        recentlyStopped.removeAll { $0.id == stopped.id }
+    }
+
+    /// Runs the saved command line again in its working directory, detached from this app.
+    func startAgain(_ stopped: StoppedServer) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        // A login shell so PATH matches the user's terminal; nohup + & so it outlives us.
+        process.arguments = ["-lc", "nohup \(stopped.commandLine) >/dev/null 2>&1 &"]
+        if let cwd = stopped.cwd { process.currentDirectoryURL = URL(fileURLWithPath: cwd) }
+        do {
+            try process.run()
+            show("Starting \(stopped.projectName) on :\(stopped.port)…")
+            forget(stopped)
+            Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                await refresh()
+            }
+        } catch {
+            show("Could not start: \(error.localizedDescription)")
         }
     }
 
@@ -261,6 +466,7 @@ final class ServerStore: ObservableObject {
                 let extra = count > 1 ? " (+\(count - 1) child processes)" : ""
                 show((force ? "Killed" : "Stopping") + " :\(entry.port)" + extra)
                 if stopping[entry.id] == nil { stopping[entry.id] = Date() }
+                remember(entry)
             case .notFound:
                 show("Already stopped")
             case .pidReused:

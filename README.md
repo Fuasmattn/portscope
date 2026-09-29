@@ -26,4 +26,8 @@ swift test
 - With more than 8 rows a filter field appears. Type a port, project, process, or branch.
 - An orange network icon marks servers bound to all interfaces (reachable from your network).
 - Click a blip on the radar to open that server. Click empty scope for a ping.
-- Settings (gear in the footer): refresh rate, radar on/off.
+- Click a row to open it in the browser (non-HTTP rows show details instead). The chevron shows command line, folder, PID, with copy buttons.
+- Servers from the same folder are grouped under a project header. A dot before the port shows the HTTP status: green answered, yellow 4xx, red 5xx, grey open but silent.
+- Keyboard: ↑ ↓ select, ↩ open, Space details, ⌘⌫ stop (⌥ for SIGKILL), ⌘F filter, ⎋ clear.
+- Recently stopped servers stay listed at the bottom with a "Start again" button that reruns the same command in the same folder.
+- Settings (gear in the footer): hotkey, reopen panel where you left it, menu bar badge style, refresh rate, radar on/off.

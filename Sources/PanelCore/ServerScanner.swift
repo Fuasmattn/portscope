@@ -17,11 +17,16 @@ public struct ServerEntry: Identifiable, Equatable, Sendable {
     public let startTime: String
     public let launcher: String?
     public let isDetached: Bool
-    public let speaksHTTP: Bool
+    public let http: HTTPProbeResult
     /// System listeners that are almost never what you are looking for.
     public let isSystemNoise: Bool
 
     public var url: URL? { URL(string: "http://localhost:\(port)") }
+    public var speaksHTTP: Bool { http.speaksHTTP }
+    public var httpStatus: Int? {
+        if case .status(let code) = http { return code }
+        return nil
+    }
 }
 
 public enum NoiseFilter {
@@ -80,17 +85,17 @@ public struct ServerScanner: Sendable {
             ["-a", "-d", "cwd", "-p", pids.map(String.init).joined(separator: ","), "-F", "pn"]) ?? ""
         let cwds = LsofParser.parseWorkingDirectories(cwdOutput)
 
-        let probes = await withTaskGroup(of: (String, Bool).self) { group -> [String: Bool] in
+        let probes = await withTaskGroup(of: (String, HTTPProbeResult).self) { group -> [String: HTTPProbeResult] in
             for (key, value) in merged {
                 let host = value.socket.host
                 let port = value.socket.port
                 group.addTask {
-                    let ok = await HTTPProbe.speaksHTTP(host: host, port: port)
-                    return (key, ok)
+                    let result = await HTTPProbe.probe(host: host, port: port)
+                    return (key, result)
                 }
             }
-            var results: [String: Bool] = [:]
-            for await (key, ok) in group { results[key] = ok }
+            var results: [String: HTTPProbeResult] = [:]
+            for await (key, result) in group { results[key] = result }
             return results
         }
 
@@ -118,7 +123,7 @@ public struct ServerScanner: Sendable {
                 startTime: record.startTime,
                 launcher: attribution.launcher,
                 isDetached: attribution.isDetached,
-                speaksHTTP: probes[key] ?? false,
+                http: probes[key] ?? .notHTTP,
                 isSystemNoise: NoiseFilter.isSystemNoise(
                     processName: name, commandLine: record.command, cwd: cwd)))
         }

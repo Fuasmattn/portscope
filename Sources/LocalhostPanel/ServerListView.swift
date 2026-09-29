@@ -3,7 +3,7 @@ import PanelCore
 import SwiftUI
 
 private let rowHeight: CGFloat = 58
-private let maxListHeight: CGFloat = 420
+private let maxListHeight: CGFloat = 440
 /// Above this many rows a search field appears.
 private let searchThreshold = 8
 
@@ -11,6 +11,9 @@ struct ServerListView: View {
     @ObservedObject var store: ServerStore
     var isPanel = false
     @State private var pointer: CGPoint?
+    @State private var listHeight: CGFloat = rowHeight
+    @State private var searchPinned = false
+    @FocusState private var filterFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,6 +34,13 @@ struct ServerListView: View {
             store.windowVisibilityChanged(window, visible: visible)
         })
         .onAppear { store.viewAppeared() }
+        .onChange(of: store.filterFocusRequest) { _, _ in
+            searchPinned = true
+            DispatchQueue.main.async { filterFocused = true }
+        }
+        .onChange(of: filterFocused) { _, focused in
+            if !focused, store.filter.isEmpty { searchPinned = false }
+        }
     }
 
     private var header: some View {
@@ -38,13 +48,13 @@ struct ServerListView: View {
     }
 
     private var showsSearch: Bool {
-        store.entries.filter { store.showAll || store.isShownByDefault($0) }.count > searchThreshold
-            || !store.filter.isEmpty
+        searchPinned || !store.filter.isEmpty
+            || store.entries.filter { store.showAll || store.isShownByDefault($0) }.count > searchThreshold
     }
 
     @ViewBuilder
     private var content: some View {
-        let rows = store.visibleEntries
+        let groups = store.groupedEntries
         if !store.hasScanned {
             ProgressView()
                 .controlSize(.small)
@@ -53,23 +63,32 @@ struct ServerListView: View {
             if showsSearch {
                 searchField
             }
-            if rows.isEmpty {
+            if groups.isEmpty {
                 Text(store.filter.isEmpty ? "No servers listening" : "No match for “\(store.filter)”")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 80)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(rows) { entry in
-                            ServerRow(entry: entry, store: store)
-                                .frame(height: rowHeight)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                            Divider().padding(.leading, 12)
+                        ForEach(groups) { group in
+                            if let title = group.title {
+                                GroupHeader(title: title)
+                            }
+                            ForEach(group.entries) { entry in
+                                ServerRow(entry: entry, store: store, grouped: group.title != nil)
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                                Divider().padding(.leading, 12)
+                            }
                         }
                     }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
                 }
-                .frame(height: min(CGFloat(rows.count) * (rowHeight + 1), maxListHeight))
-                .animation(.spring(duration: 0.35), value: rows.map(\.id))
+                .frame(height: min(listHeight, maxListHeight))
+                .animation(.spring(duration: 0.35), value: groups.map(\.id))
+            }
+            if !store.recentlyStopped.isEmpty {
+                Divider()
+                RecentlyStoppedSection(store: store)
             }
         }
     }
@@ -82,6 +101,7 @@ struct ServerListView: View {
             TextField("Filter by port, project, or branch", text: $store.filter)
                 .textFieldStyle(.plain)
                 .font(.callout)
+                .focused($filterFocused)
             if !store.filter.isEmpty {
                 Button { store.filter = "" } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(IconButtonStyle())
@@ -137,55 +157,102 @@ struct ServerListView: View {
     }
 }
 
+/// Section label for several servers from the same project.
+private struct GroupHeader: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "folder")
+                .font(.caption2)
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+    }
+}
+
 struct ServerRow: View {
     let entry: ServerEntry
     @ObservedObject var store: ServerStore
+    var grouped = false
     @State private var confirmingKill = false
 
     private var hovered: Bool { store.highlightedID == entry.id }
+    private var selected: Bool { store.selectedID == entry.id }
     private var isStopping: Bool { store.stopping[entry.id] != nil }
+    private var expanded: Bool { store.expandedIDs.contains(entry.id) }
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(":\(String(entry.port))")
-                .font(.system(.body, design: .monospaced).weight(.medium))
-                .frame(width: 62, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
                 HStack(spacing: 6) {
-                    if store.pinnedPorts.contains(entry.port) {
-                        Image(systemName: "pin.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                    statusDot
+                    Text(":\(String(entry.port))")
+                        .font(.system(.body, design: .monospaced).weight(.medium))
+                }
+                .frame(width: 68, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        if store.pinnedPorts.contains(entry.port) {
+                            Image(systemName: "pin.fill")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(grouped ? entry.processName : entry.projectName)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        if entry.isDetached {
+                            Text("detached")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        }
+                        if !entry.loopbackOnly {
+                            Image(systemName: "network")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                                .help("Listening on all interfaces, reachable from your network")
+                        }
                     }
-                    Text(entry.projectName)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    if entry.isDetached {
-                        Text("detached")
-                            .font(.caption2)
-                            .foregroundStyle(.orange)
-                    }
-                    if !entry.loopbackOnly {
-                        Image(systemName: "network")
-                            .font(.caption2)
-                            .foregroundStyle(.orange)
-                            .help("Listening on all interfaces, reachable from your network")
+                    TimelineView(.periodic(from: .now, by: 30)) { timeline in
+                        HStack(spacing: 4) {
+                            Text(subtitle(now: timeline.date))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            if let launcher = entry.launcher {
+                                launcherBadge(launcher)
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
                 }
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+
+                Spacer(minLength: 4)
+
+                trailing
+            }
+            .frame(height: rowHeight)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                // Click the row to open it; servers that are not HTTP show their details instead.
+                if entry.speaksHTTP { store.open(entry) } else { store.toggleDetails(entry) }
             }
 
-            Spacer(minLength: 4)
-
-            trailing
+            if expanded {
+                details
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
         .padding(.horizontal, 12)
-        .background(hovered ? Color.accentColor.opacity(0.12) : Color.clear)
+        .background(background)
         .onHover { inside in
             if inside {
                 store.rowHover = entry.id
@@ -195,8 +262,86 @@ struct ServerRow: View {
             }
         }
         .opacity(isStopping ? 0.55 : (store.isShownByDefault(entry) ? 1 : 0.5))
-        .contentShape(Rectangle())
         .contextMenu { menu }
+        .animation(.easeOut(duration: 0.18), value: expanded)
+    }
+
+    private var background: some View {
+        ZStack(alignment: .leading) {
+            Color.accentColor.opacity(hovered ? 0.12 : 0)
+            if selected {
+                Rectangle().fill(Color.accentColor).frame(width: 3)
+            }
+        }
+    }
+
+    /// Green answered, amber client error, red server error, grey connected but silent.
+    @ViewBuilder
+    private var statusDot: some View {
+        switch entry.http {
+        case .status(let code):
+            Circle().fill(code >= 500 ? Color.red : code >= 400 ? Color.yellow : Color.green)
+                .frame(width: 6, height: 6)
+                .help("HTTP \(code)")
+        case .unresponsive:
+            Circle().fill(Color.secondary.opacity(0.5))
+                .frame(width: 6, height: 6)
+                .help("Port is open but did not answer")
+        case .notHTTP:
+            Circle().fill(Color.clear).frame(width: 6, height: 6)
+        }
+    }
+
+    @ViewBuilder
+    private func launcherBadge(_ launcher: String) -> some View {
+        if let icon = store.launcherIcon(for: launcher) {
+            Image(nsImage: icon)
+                .resizable()
+                .frame(width: 13, height: 13)
+                .help("Started from \(launcher)")
+        } else {
+            Text("via \(launcher)")
+        }
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            detailRow("Command", entry.commandLine) { store.copy(entry.commandLine, label: "command") }
+            if let cwd = entry.cwd {
+                detailRow("Folder", cwd) { store.copy(cwd, label: "path") }
+            }
+            HStack(spacing: 12) {
+                Text("PID \(String(entry.pid))")
+                if let launcher = entry.launcher { Text("via \(launcher)") }
+                if let branch = entry.branch { Text("on \(branch)") }
+                Text(entry.loopbackOnly ? "loopback only" : "all interfaces (\(entry.host))")
+                Spacer()
+                Button("Copy PID") { store.copy(String(entry.pid), label: "PID") }
+                    .buttonStyle(.borderless)
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.leading, 68 + 10)
+        .padding(.bottom, 10)
+    }
+
+    private func detailRow(_ label: String, _ value: String, copy: @escaping () -> Void) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(label)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 56, alignment: .leading)
+            Text(value)
+                .font(.system(size: 11, design: .monospaced))
+                .textSelection(.enabled)
+                .lineLimit(3)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+            Button { copy() } label: { Image(systemName: "doc.on.doc") }
+                .buttonStyle(IconButtonStyle())
+                .help("Copy")
+        }
     }
 
     @ViewBuilder
@@ -230,6 +375,12 @@ struct ServerRow: View {
             .help("Option-click to force kill")
         } else {
             HStack(spacing: 2) {
+                Button { store.toggleDetails(entry) } label: {
+                    Image(systemName: "chevron.down")
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
+                }
+                .buttonStyle(IconButtonStyle(active: expanded))
+                .help(expanded ? "Hide details" : "Show details")
                 if entry.speaksHTTP {
                     Button { store.open(entry) } label: { Image(systemName: "arrow.up.right.square") }
                         .buttonStyle(IconButtonStyle())
@@ -239,7 +390,7 @@ struct ServerRow: View {
                     .buttonStyle(IconButtonStyle())
                     .help("Stop process")
             }
-            .opacity(hovered ? 1 : 0)
+            .opacity(hovered || expanded ? 1 : 0)
             .animation(.easeOut(duration: 0.12), value: hovered)
         }
     }
@@ -249,6 +400,7 @@ struct ServerRow: View {
         if entry.speaksHTTP {
             Button("Open in browser") { store.open(entry) }
         }
+        Button(expanded ? "Hide details" : "Show details") { store.toggleDetails(entry) }
         Button("Copy URL") { store.copyURL(entry) }
         Button("Copy port") { store.copyPort(entry) }
         if entry.cwd != nil {
@@ -277,13 +429,84 @@ struct ServerRow: View {
         Button("Force kill (SIGKILL)") { store.terminate(entry, force: true) }
     }
 
-    private var subtitle: String {
+    private func subtitle(now: Date) -> String {
         var parts: [String] = []
         if let branch = entry.branch { parts.append(branch) }
-        parts.append(entry.processName)
-        if let uptime = entry.uptime { parts.append(Formatting.uptime(uptime)) }
-        if let launcher = entry.launcher { parts.append("via \(launcher)") }
+        if !grouped { parts.append(entry.processName) }
+        if let uptime = store.liveUptime(entry, now: now) { parts.append(Formatting.uptime(uptime)) }
         return parts.joined(separator: " · ")
+    }
+}
+
+/// Servers stopped from here, with a way to start them again.
+private struct RecentlyStoppedSection: View {
+    @ObservedObject var store: ServerStore
+    @State private var open = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button {
+                open.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                    Text("Recently stopped")
+                        .font(.caption.weight(.semibold))
+                    Text("\(store.recentlyStopped.count)")
+                        .font(.caption.monospacedDigit())
+                    Spacer()
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if open {
+                ForEach(store.recentlyStopped) { stopped in
+                    StoppedRow(stopped: stopped, store: store)
+                }
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: open)
+    }
+}
+
+private struct StoppedRow: View {
+    let stopped: StoppedServer
+    @ObservedObject var store: ServerStore
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(":\(String(stopped.port))")
+                .font(.system(.callout, design: .monospaced))
+                .frame(width: 68, alignment: .leading)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(stopped.projectName)
+                    .font(.callout)
+                    .lineLimit(1)
+                Text(stopped.commandLine)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            Button("Start again") { store.startAgain(stopped) }
+                .buttonStyle(PillButtonStyle(role: .neutral))
+                .help("Run the same command in \(stopped.cwd ?? "the same folder")")
+            Button { store.forget(stopped) } label: { Image(systemName: "xmark") }
+                .buttonStyle(IconButtonStyle())
+                .help("Forget")
+                .opacity(hovering ? 1 : 0)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 44)
+        .background(hovering ? Color.accentColor.opacity(0.08) : Color.clear)
+        .onHover { hovering = $0 }
     }
 }
 

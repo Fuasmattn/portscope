@@ -221,12 +221,17 @@ struct RadarView: View {
                 context.stroke(
                     circle(center: position, radius: dot + 4),
                     with: .color(Color.white.opacity(0.9)), lineWidth: 1)
+                // Label sits up-right of the blip, flipped down or left when that would leave the card.
+                let nearTop = position.y < 16
+                let nearRight = position.x > size.width - 40
                 context.draw(
                     Text(":\(String(blip.port))")
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
                         .foregroundStyle(Color.white),
-                    at: CGPoint(x: position.x + dot + 8, y: position.y - dot - 6),
-                    anchor: .leading)
+                    at: CGPoint(
+                        x: nearRight ? position.x - dot - 8 : position.x + dot + 8,
+                        y: nearTop ? position.y + dot + 6 : position.y - dot - 6),
+                    anchor: nearRight ? .trailing : .leading)
             }
         }
     }

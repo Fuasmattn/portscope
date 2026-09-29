@@ -17,6 +17,7 @@ final class FloatingPanelController {
 
     private var panel: KeyablePanel?
     private var resignObserver: NSObjectProtocol?
+    private var moveObserver: NSObjectProtocol?
 
     func toggle() {
         if let panel = panel, panel.isVisible {
@@ -29,8 +30,23 @@ final class FloatingPanelController {
     private func show() {
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        position(panel)
+        if ServerStore.shared.rememberPanelPosition, let saved = savedOrigin, fits(saved, panel) {
+            panel.setFrameOrigin(saved)
+        } else {
+            position(panel)
+        }
         panel.makeKeyAndOrderFront(nil)
+    }
+
+    private var savedOrigin: NSPoint? {
+        guard let values = UserDefaults.standard.array(forKey: "panelOrigin") as? [Double], values.count == 2 else { return nil }
+        return NSPoint(x: values[0], y: values[1])
+    }
+
+    /// Only reuse a saved spot if it is still on some screen (monitors come and go).
+    private func fits(_ origin: NSPoint, _ panel: NSPanel) -> Bool {
+        let frame = NSRect(origin: origin, size: panel.frame.size)
+        return NSScreen.screens.contains { $0.visibleFrame.intersects(frame) }
     }
 
     private func makePanel() -> KeyablePanel {
@@ -57,6 +73,13 @@ final class FloatingPanelController {
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+        moveObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didMoveNotification, object: panel, queue: .main
+        ) { [weak panel] _ in
+            guard let panel = panel else { return }
+            UserDefaults.standard.set([panel.frame.origin.x, panel.frame.origin.y], forKey: "panelOrigin")
+        }
 
         resignObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification, object: panel, queue: .main
