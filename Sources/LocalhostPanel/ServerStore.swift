@@ -1,6 +1,5 @@
 import AppKit
 import PanelCore
-import ServiceManagement
 import SwiftUI
 
 enum Reaction {
@@ -44,7 +43,6 @@ final class ServerStore: ObservableObject {
     @Published var activeRefreshInterval: Double {
         didSet { UserDefaults.standard.set(activeRefreshInterval, forKey: "activeRefreshInterval") }
     }
-    @Published private(set) var launchAtLogin = false
 
     private let scanner = ServerScanner()
     private var loop: Task<Void, Never>?
@@ -59,7 +57,6 @@ final class ServerStore: ObservableObject {
         hiddenProcesses = Set(UserDefaults.standard.array(forKey: "hiddenProcesses") as? [String] ?? [])
         showMascot = UserDefaults.standard.object(forKey: "showMascot") as? Bool ?? true
         activeRefreshInterval = UserDefaults.standard.object(forKey: "activeRefreshInterval") as? Double ?? 2
-        launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
     // MARK: Derived state
@@ -215,16 +212,6 @@ final class ServerStore: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(String(entry.port), forType: .string)
         show("Copied \(entry.port)")
-    }
-
-    func setLaunchAtLogin(_ enabled: Bool) {
-        do {
-            if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-            launchAtLogin = SMAppService.mainApp.status == .enabled
-        } catch {
-            launchAtLogin = SMAppService.mainApp.status == .enabled
-            show("Launch at login unavailable: \(error.localizedDescription)")
-        }
     }
 
     func togglePin(_ entry: ServerEntry) {

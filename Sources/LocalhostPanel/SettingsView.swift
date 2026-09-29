@@ -1,15 +1,12 @@
 import SwiftUI
 
-/// The Settings window: launch at login, refresh rate, radar, and the (fixed) hotkey.
+/// The Settings window: refresh rate, radar, and the (fixed) hotkey.
 struct SettingsView: View {
     @ObservedObject var store: ServerStore
 
     var body: some View {
         Form {
             Section {
-                Toggle("Launch at login", isOn: Binding(
-                    get: { store.launchAtLogin },
-                    set: { store.setLaunchAtLogin($0) }))
                 Toggle("Show the radar", isOn: $store.showMascot)
             }
             Section {

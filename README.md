@@ -26,4 +26,4 @@ swift test
 - With more than 8 rows a filter field appears. Type a port, project, process, or branch.
 - An orange network icon marks servers bound to all interfaces (reachable from your network).
 - Click a blip on the radar to open that server. Click empty scope for a ping.
-- Settings (gear in the footer): launch at login, refresh rate, radar on/off. Launch at login only works from a bundled, signed .app, not the bare `swift build` binary.
+- Settings (gear in the footer): refresh rate, radar on/off.
