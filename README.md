@@ -26,7 +26,7 @@ swift test
 - With more than 8 rows a filter field appears. Type a port, project, process, or branch.
 - An orange network icon marks servers bound to all interfaces (reachable from your network).
 - Click a blip on the radar to open that server. Click empty scope for a ping.
-- Click a row (or the chevron) for details: command line, folder, PID, with copy buttons. Settings can make a click open the browser instead.
+- Click a row (or the info icon) for a details popover: command line, folder, PID, with copy buttons. Settings can make a click open the browser instead.
 - Servers from the same folder are grouped under a project header. A dot before the port shows the HTTP status: green answered, yellow 4xx, red 5xx, grey open but silent.
 - Keyboard: ↑ ↓ select, ↩ open, Space details, ⌘⌫ stop (⌥ for SIGKILL), ⌘F filter, ⎋ clear.
 - Recently stopped servers stay listed at the bottom with a "Start again" button that reruns the same command in the same folder.

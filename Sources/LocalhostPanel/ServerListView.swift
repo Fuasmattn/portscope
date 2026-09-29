@@ -84,7 +84,6 @@ struct ServerListView: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
                 }
                 .frame(height: min(listHeight, maxListHeight))
-                .animation(.smooth(duration: 0.3), value: listHeight)
                 .animation(.spring(duration: 0.35), value: groups.map(\.id))
             }
             if !store.recentlyStopped.isEmpty {
@@ -188,10 +187,9 @@ struct ServerRow: View {
     private var hovered: Bool { store.highlightedID == entry.id }
     private var selected: Bool { store.selectedID == entry.id }
     private var isStopping: Bool { store.stopping[entry.id] != nil }
-    private var expanded: Bool { store.expandedIDs.contains(entry.id) }
+    private var showingDetails: Bool { store.detailsID == entry.id }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 HStack(spacing: 6) {
                     statusDot
@@ -245,15 +243,16 @@ struct ServerRow: View {
             .onTapGesture {
                 if store.rowClickOpens, entry.speaksHTTP { store.open(entry) } else { store.toggleDetails(entry) }
             }
-
-            if expanded {
-                details
-                    .transition(.opacity)
-            }
-        }
-        .clipped()
         .padding(.horizontal, 12)
         .background(background)
+        .popover(
+            isPresented: Binding(
+                get: { showingDetails },
+                set: { open in if !open, showingDetails { store.detailsID = nil } }),
+            arrowEdge: .bottom
+        ) {
+            DetailsPopover(entry: entry, store: store)
+        }
         .onHover { inside in
             if inside {
                 store.rowHover = entry.id
@@ -304,44 +303,6 @@ struct ServerRow: View {
         }
     }
 
-    /// Label column, value column, copy button. Branch and launcher already sit in the row subtitle.
-    private var details: some View {
-        Grid(alignment: .topLeading, horizontalSpacing: 10, verticalSpacing: 6) {
-            detailRow("Command", entry.commandLine, mono: true) { store.copy(entry.commandLine, label: "command") }
-            if let cwd = entry.cwd {
-                detailRow("Folder", cwd, mono: true) { store.copy(cwd, label: "path") }
-            }
-            detailRow("PID", String(entry.pid), mono: true) { store.copy(String(entry.pid), label: "PID") }
-            detailRow("Listening", entry.loopbackOnly ? "localhost only" : "all interfaces (\(entry.host))", mono: false, copy: nil)
-        }
-        .padding(.leading, 68 + 10)
-        .padding(.trailing, 2)
-        .padding(.bottom, 10)
-    }
-
-    private func detailRow(_ label: String, _ value: String, mono: Bool, copy: (() -> Void)?) -> some View {
-        GridRow {
-            Text(label)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.secondary)
-                .gridColumnAlignment(.leading)
-                .padding(.top, 1)
-            Text(value)
-                .font(mono ? .system(size: 11, design: .monospaced) : .caption)
-                .textSelection(.enabled)
-                .lineLimit(3)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if let copy = copy {
-                Button { copy() } label: { Image(systemName: "doc.on.doc") }
-                    .buttonStyle(IconButtonStyle())
-                    .help("Copy")
-            } else {
-                Color.clear.frame(width: 24, height: 1)
-            }
-        }
-    }
-
     @ViewBuilder
     private var trailing: some View {
         if isStopping {
@@ -373,12 +334,9 @@ struct ServerRow: View {
             .help("Option-click to force kill")
         } else {
             HStack(spacing: 2) {
-                Button { store.toggleDetails(entry) } label: {
-                    Image(systemName: "chevron.down")
-                        .rotationEffect(.degrees(expanded ? 180 : 0))
-                }
-                .buttonStyle(IconButtonStyle(active: expanded))
-                .help(expanded ? "Hide details" : "Show details")
+                Button { store.toggleDetails(entry) } label: { Image(systemName: "info.circle") }
+                    .buttonStyle(IconButtonStyle(active: showingDetails))
+                    .help("Details")
                 if entry.speaksHTTP {
                     Button { store.open(entry) } label: { Image(systemName: "arrow.up.right.square") }
                         .buttonStyle(IconButtonStyle())
@@ -388,7 +346,7 @@ struct ServerRow: View {
                     .buttonStyle(IconButtonStyle())
                     .help("Stop process")
             }
-            .opacity(hovered || expanded ? 1 : 0)
+            .opacity(hovered || showingDetails ? 1 : 0)
             .animation(.easeOut(duration: 0.12), value: hovered)
         }
     }
@@ -398,7 +356,7 @@ struct ServerRow: View {
         if entry.speaksHTTP {
             Button("Open in browser") { store.open(entry) }
         }
-        Button(expanded ? "Hide details" : "Show details") { store.toggleDetails(entry) }
+        Button("Details") { store.toggleDetails(entry) }
         Button("Copy URL") { store.copyURL(entry) }
         Button("Copy port") { store.copyPort(entry) }
         if entry.cwd != nil {
@@ -433,6 +391,58 @@ struct ServerRow: View {
         if !grouped { parts.append(entry.processName) }
         if let uptime = store.liveUptime(entry, now: now) { parts.append(Formatting.uptime(uptime)) }
         return parts.joined(separator: " · ")
+    }
+}
+
+/// Command, folder, PID, interfaces for one server, with copy buttons. Branch and launcher are in the row.
+private struct DetailsPopover: View {
+    let entry: ServerEntry
+    @ObservedObject var store: ServerStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text(":\(String(entry.port))")
+                    .font(.system(.body, design: .monospaced).weight(.medium))
+                Text(entry.projectName)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+            }
+            Grid(alignment: .topLeading, horizontalSpacing: 10, verticalSpacing: 8) {
+                row("Command", entry.commandLine, mono: true) { store.copy(entry.commandLine, label: "command") }
+                if let cwd = entry.cwd {
+                    row("Folder", cwd, mono: true) { store.copy(cwd, label: "path") }
+                }
+                row("PID", String(entry.pid), mono: true) { store.copy(String(entry.pid), label: "PID") }
+                row("Listening", entry.loopbackOnly ? "localhost only" : "all interfaces (\(entry.host))", mono: false, copy: nil)
+            }
+        }
+        .padding(14)
+        .frame(width: 360)
+    }
+
+    private func row(_ label: String, _ value: String, mono: Bool, copy: (() -> Void)?) -> some View {
+        GridRow {
+            Text(label)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .gridColumnAlignment(.leading)
+                .padding(.top, 1)
+            Text(value)
+                .font(mono ? .system(size: 11, design: .monospaced) : .caption)
+                .textSelection(.enabled)
+                .lineLimit(4)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let copy = copy {
+                Button { copy() } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(IconButtonStyle())
+                    .help("Copy")
+            } else {
+                Color.clear.frame(width: 24, height: 1)
+            }
+        }
     }
 }
 

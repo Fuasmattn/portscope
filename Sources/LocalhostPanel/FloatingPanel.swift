@@ -27,44 +27,9 @@ final class FloatingPanelController {
         }
     }
 
-    private var contentSize: CGSize = .zero
-    private var shrink: DispatchWorkItem?
-
-    /// The window is transparent, so it can be larger than the card without showing. Growing
-    /// happens at once (the card animates inside); shrinking waits until the collapse animation
-    /// has settled, so the window edge never fights SwiftUI's spring.
-    fileprivate func contentSizeChanged(_ size: CGSize) {
-        guard size.width > 0, size.height > 0 else { return }
-        contentSize = size
-        guard let panel = panel else { return }
-        panel.invalidateShadow()
-        shrink?.cancel()
-        if size.height > panel.frame.height + 0.5 || abs(size.width - panel.frame.width) > 0.5 {
-            resize(panel, to: size)
-        } else if size.height < panel.frame.height - 0.5 {
-            let work = DispatchWorkItem { [weak self] in
-                guard let self = self, let panel = self.panel else { return }
-                self.resize(panel, to: self.contentSize)
-            }
-            shrink = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
-        }
-    }
-
-    /// Keeps the top-left corner where it is.
-    private func resize(_ panel: NSPanel, to size: CGSize) {
-        var frame = panel.frame
-        frame.origin.y = frame.maxY - size.height
-        frame.size = size
-        panel.setFrame(frame, display: true, animate: false)
-        panel.invalidateShadow()
-    }
-
     private func show() {
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        let size = contentSize.height > 0 ? contentSize : (panel.contentView?.fittingSize ?? .zero)
-        if size.height > 0 { panel.setContentSize(size) }
         if ServerStore.shared.rememberPanelPosition, let saved = savedOrigin, fits(saved, panel) {
             panel.setFrameOrigin(saved)
         } else {
@@ -86,18 +51,12 @@ final class FloatingPanelController {
 
     private func makePanel() -> KeyablePanel {
         // Borderless: no title bar, so the window is exactly the size of the list. Corners and
-        // shadow are ours. The window is not auto-sized; it follows the content's measured size
-        // every frame, so SwiftUI's spring drives the window edge too instead of a one-step jump.
+        // shadow are ours.
         let root = ServerListView(store: ServerStore.shared, isPanel: true)
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 14))
-            .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
-                // Off the layout pass: setting a window frame mid-layout would re-enter it.
-                DispatchQueue.main.async { FloatingPanelController.shared.contentSizeChanged(size) }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         let controller = NSHostingController(rootView: root)
-        controller.sizingOptions = []
+        controller.sizingOptions = [.preferredContentSize]
 
         let panel = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 200),

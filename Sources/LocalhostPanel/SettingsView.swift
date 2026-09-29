@@ -40,7 +40,7 @@ struct SettingsView: View {
                 LabeledContent("Refresh in background", value: "Every 10 seconds")
             }
             Section("Keyboard") {
-                Text("↑ ↓ select · ↩ open · Space details · ⌘⌫ stop (⌥ for SIGKILL) · ⌘F filter · ⎋ clear")
+                Text("↑ ↓ select · ↩ open · Space details · ⌘⌫ stop (⌥ for SIGKILL) · ⌘F filter · ⎋ close")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -83,8 +83,8 @@ final class ServerStore: ObservableObject {
     @Published var filterFocusRequest = 0
     /// Keyboard selection in the list.
     @Published var selectedID: String?
-    /// Rows showing their details block.
-    @Published var expandedIDs: Set<String> = []
+    /// Row whose details popover is open.
+    @Published var detailsID: String?
     /// When the last scan finished, so uptimes can tick between scans.
     @Published private(set) var lastScanDate = Date()
     /// Servers stopped from here, newest first, so they can be started again.
@@ -246,7 +246,7 @@ final class ServerStore: ObservableObject {
         lastScanDate = now
         hasScanned = true
         if let selected = selectedID, !ids.contains(selected) { selectedID = nil }
-        expandedIDs = expandedIDs.filter(ids.contains)
+        if let details = detailsID, !ids.contains(details) { detailsID = nil }
     }
 
     // MARK: Keyboard
@@ -272,7 +272,8 @@ final class ServerStore: ObservableObject {
         case 3 where command:                             // ⌘F
             filterFocusRequest += 1
             return true
-        case 53:                                          // Esc: clear filter first, then let the window close
+        case 53:                                          // Esc: details, filter, selection, then the window
+            if detailsID != nil { detailsID = nil; return true }
             if !filter.isEmpty { filter = ""; return true }
             if selectedID != nil { selectedID = nil; return true }
             return false
@@ -294,10 +295,7 @@ final class ServerStore: ObservableObject {
     }
 
     func toggleDetails(_ entry: ServerEntry) {
-        // One animation at the source so the row, its neighbours, and the list height move together.
-        withAnimation(.smooth(duration: 0.3)) {
-            if expandedIDs.contains(entry.id) { expandedIDs.remove(entry.id) } else { expandedIDs.insert(entry.id) }
-        }
+        detailsID = detailsID == entry.id ? nil : entry.id
     }
 
     // MARK: Actions
