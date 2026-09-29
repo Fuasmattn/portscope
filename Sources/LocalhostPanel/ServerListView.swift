@@ -2,7 +2,7 @@ import AppKit
 import PanelCore
 import SwiftUI
 
-private let rowHeight: CGFloat = 58
+private let rowHeight: CGFloat = 46
 private let maxListHeight: CGFloat = 440
 /// Above this many rows a search field appears.
 private let searchThreshold = 8
@@ -77,7 +77,7 @@ struct ServerListView: View {
                             ForEach(group.entries) { entry in
                                 ServerRow(entry: entry, store: store, grouped: group.title != nil)
                                     .transition(.opacity.combined(with: .move(edge: .top)))
-                                Divider().padding(.leading, 12)
+                                Hairline().padding(.leading, 90)
                             }
                         }
                     }
@@ -121,12 +121,16 @@ struct ServerListView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             } else if store.hiddenCount > 0 || store.showAll {
-                Toggle(isOn: $store.showAll) {
-                    Text(store.showAll ? "Showing all" : "\(store.hiddenCount) hidden")
+                Button {
+                    store.showAll.toggle()
+                } label: {
+                    Text(store.showAll ? "Hide \(store.hiddenCount) again" : "Show \(store.hiddenCount) hidden")
                         .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .underline(true, color: Color.secondary.opacity(0.4))
                 }
-                .toggleStyle(.switch)
-                .controlSize(.mini)
+                .buttonStyle(.plain)
+                .help(store.showAll ? "Back to the filtered list" : "Include system noise and hidden servers")
             }
             Spacer()
             if isPanel {
@@ -188,6 +192,7 @@ struct ServerRow: View {
     private var selected: Bool { store.selectedID == entry.id }
     private var isStopping: Bool { store.stopping[entry.id] != nil }
     private var showingDetails: Bool { store.detailsID == entry.id }
+    private var siblings: [ServerEntry] { store.siblings(of: entry) }
 
     var body: some View {
             HStack(spacing: 10) {
@@ -206,8 +211,21 @@ struct ServerRow: View {
                                 .foregroundStyle(.secondary)
                         }
                         Text(grouped ? entry.processName : entry.projectName)
+                            .fontWeight(.medium)
                             .lineLimit(1)
                             .truncationMode(.middle)
+                        if !siblings.isEmpty {
+                            Text("×\(siblings.count + 1)")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .help("Also PID \(siblings.map { String($0.pid) }.joined(separator: ", ")). Stop signals all of them.")
+                        }
+                        if store.hasPortConflict(entry) {
+                            Text("port conflict")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                                .help("Another project also listens on :\(entry.port)")
+                        }
                         if entry.isDetached {
                             Text("detached")
                                 .font(.caption2)
@@ -380,6 +398,11 @@ struct ServerRow: View {
         Button(store.hiddenPorts.contains(entry.port) ? "Unhide port \(String(entry.port))" : "Hide port \(String(entry.port))") {
             store.toggleHidden(entry)
         }
+        if let cwd = entry.cwd {
+            Button(store.hiddenFolders.contains(cwd) ? "Unhide project \(entry.projectName)" : "Hide project \(entry.projectName)") {
+                store.toggleHiddenFolder(entry)
+            }
+        }
         Divider()
         Button("Stop (SIGTERM)") { store.terminate(entry, force: false) }
         Button("Force kill (SIGKILL)") { store.terminate(entry, force: true) }
@@ -539,12 +562,19 @@ struct WatcherHeader: View {
                         .animation(.default, value: store.badgeCount)
                 }
                 if store.showMascot {
-                    Text(quip)
-                        .font(.caption)
+                    TimelineView(.periodic(from: .now, by: 0.55)) { timeline in
+                        let on = Int(timeline.date.timeIntervalSinceReferenceDate / 0.55) % 2 == 0
+                        HStack(alignment: .firstTextBaseline, spacing: 1) {
+                            Text(quip)
+                                .lineLimit(2)
+                                .id(quip)
+                                .transition(.opacity)
+                            Text("▍")
+                                .opacity(on ? 0.7 : 0)
+                        }
+                        .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(Color.white.opacity(0.65))
-                        .lineLimit(2)
-                        .id(quip)
-                        .transition(.opacity)
+                    }
                 }
             }
             .animation(.default, value: quip)
@@ -671,5 +701,14 @@ struct IconButtonStyle: ButtonStyle {
             if active { return base }
             return base.opacity(hovering ? 1 : (onDark ? 0.8 : 0.65))
         }
+    }
+}
+
+/// Half-point divider at 8 % so rows read as one surface, not a table.
+struct Hairline: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.08))
+            .frame(height: 0.5)
     }
 }

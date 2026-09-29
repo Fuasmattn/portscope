@@ -60,7 +60,7 @@ struct RadarView: View {
     }
 
     private var blips: [Blip] {
-        store.entries
+        store.collapsedEntries
             .filter { store.isShownByDefault($0) }
             .map(blip(for:))
     }
@@ -286,7 +286,7 @@ struct RadarView: View {
 @MainActor
 enum Quips {
     static func lines(for store: ServerStore) -> [String] {
-        let shown = store.entries.filter { store.isShownByDefault($0) }
+        let shown = store.collapsedEntries.filter { store.isShownByDefault($0) }
 
         if store.reaction == .alert, let arrival = store.lastArrival {
             return ["New contact on :\(arrival.port)."]

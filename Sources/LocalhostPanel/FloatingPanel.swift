@@ -55,6 +55,18 @@ final class FloatingPanelController {
         let root = ServerListView(store: ServerStore.shared, isPanel: true)
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 14))
+            // Milled edge: a dark outline and, just inside it, a highlight that fades toward the bottom.
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(Color.black.opacity(0.45), lineWidth: 0.5))
+            .overlay(
+                RoundedRectangle(cornerRadius: 13.5)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.22), Color.white.opacity(0.06), Color.white.opacity(0.03)],
+                            startPoint: .top, endPoint: .bottom),
+                        lineWidth: 0.5)
+                    .padding(0.5))
         let controller = NSHostingController(rootView: root)
         controller.sizingOptions = [.preferredContentSize]
 

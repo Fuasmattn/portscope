@@ -39,6 +39,15 @@ struct SettingsView: View {
                 }
                 LabeledContent("Refresh in background", value: "Every 10 seconds")
             }
+            Section {
+                LabeledContent("Hidden servers") {
+                    Button("Reset \(store.hiddenRuleCount) rules") { store.resetHidden() }
+                        .disabled(store.hiddenRuleCount == 0)
+                }
+                Text("Ports, processes, and projects you hid from the list. System noise stays hidden.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("Keyboard") {
                 Text("↑ ↓ select · ↩ open · Space details · ⌘⌫ stop (⌥ for SIGKILL) · ⌘F filter · ⎋ close")
                     .font(.caption)

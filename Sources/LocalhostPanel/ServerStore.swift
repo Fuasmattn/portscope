@@ -56,6 +56,8 @@ final class ServerStore: ObservableObject {
     @Published private(set) var hiddenPorts: Set<Int>
     /// Hidden by process name, because apps like Discord or Spotify get a new port every launch.
     @Published private(set) var hiddenProcesses: Set<String>
+    /// Hidden by working directory, for "never show this project".
+    @Published private(set) var hiddenFolders: Set<String>
     @Published private(set) var reaction: Reaction = .idle
     @Published private(set) var lastArrival: ServerEntry?
     @Published private(set) var lastArrivalDate: Date?
@@ -126,6 +128,7 @@ final class ServerStore: ObservableObject {
         pinnedPorts = Set(UserDefaults.standard.array(forKey: "pinnedPorts") as? [Int] ?? [])
         hiddenPorts = Set(UserDefaults.standard.array(forKey: "hiddenPorts") as? [Int] ?? [])
         hiddenProcesses = Set(UserDefaults.standard.array(forKey: "hiddenProcesses") as? [String] ?? [])
+        hiddenFolders = Set(UserDefaults.standard.array(forKey: "hiddenFolders") as? [String] ?? [])
         showMascot = UserDefaults.standard.object(forKey: "showMascot") as? Bool ?? true
         activeRefreshInterval = UserDefaults.standard.object(forKey: "activeRefreshInterval") as? Double ?? 2
         badgeStyle = BadgeStyle(rawValue: UserDefaults.standard.string(forKey: "badgeStyle") ?? "") ?? .count
@@ -139,8 +142,41 @@ final class ServerStore: ObservableObject {
 
     // MARK: Derived state
 
+    /// Same port, same folder: almost always one app listening on IPv4 and IPv6 from two processes,
+    /// or a parent and its worker. Shown as one row; the others ride along for Stop.
+    /// Keyed by the row's entry id, values include the row's own entry.
+    var mergedByPort: [String: [ServerEntry]] {
+        var buckets: [String: [ServerEntry]] = [:]
+        for entry in entries.sorted(by: { $0.pid < $1.pid }) {
+            let key = "\(entry.port)|\(entry.cwd ?? "?\(entry.pid)")"
+            buckets[key, default: []].append(entry)
+        }
+        var merged: [String: [ServerEntry]] = [:]
+        for group in buckets.values where group.count > 1 {
+            merged[group[0].id] = group
+        }
+        return merged
+    }
+
+    /// Entries with port-and-folder duplicates collapsed onto their first process.
+    var collapsedEntries: [ServerEntry] {
+        let merged = mergedByPort
+        let absorbed = Set(merged.values.flatMap { $0.dropFirst() }.map(\.id))
+        return entries.filter { !absorbed.contains($0.id) }
+    }
+
+    /// Other processes folded into this row, if any.
+    func siblings(of entry: ServerEntry) -> [ServerEntry] {
+        Array(mergedByPort[entry.id]?.dropFirst() ?? [])
+    }
+
+    /// True when another project also listens on this port: a real conflict, not a merge.
+    func hasPortConflict(_ entry: ServerEntry) -> Bool {
+        collapsedEntries.contains { $0.port == entry.port && $0.id != entry.id && isShownByDefault($0) }
+    }
+
     var visibleEntries: [ServerEntry] {
-        let filtered = entries.filter { entry in
+        let filtered = collapsedEntries.filter { entry in
             guard showAll || isShownByDefault(entry) else { return false }
             return ListLogic.matches(
                 needle: filter, port: entry.port, projectName: entry.projectName,
@@ -164,11 +200,11 @@ final class ServerStore: ObservableObject {
     }
 
     var badgeCount: Int {
-        entries.filter { isShownByDefault($0) }.count
+        collapsedEntries.filter { isShownByDefault($0) }.count
     }
 
     var hiddenCount: Int {
-        entries.count - badgeCount
+        collapsedEntries.count - badgeCount
     }
 
     /// True once a stop signal has gone unanswered long enough to offer SIGKILL.
@@ -189,6 +225,7 @@ final class ServerStore: ObservableObject {
         return !entry.isSystemNoise
             && !hiddenPorts.contains(entry.port)
             && !hiddenProcesses.contains(entry.processName)
+            && !(entry.cwd.map(hiddenFolders.contains) ?? false)
     }
 
     // MARK: Polling
@@ -444,6 +481,22 @@ final class ServerStore: ObservableObject {
         UserDefaults.standard.set(Array(hiddenProcesses), forKey: "hiddenProcesses")
     }
 
+    func toggleHiddenFolder(_ entry: ServerEntry) {
+        guard let cwd = entry.cwd else { return }
+        if hiddenFolders.contains(cwd) { hiddenFolders.remove(cwd) } else { hiddenFolders.insert(cwd) }
+        UserDefaults.standard.set(Array(hiddenFolders), forKey: "hiddenFolders")
+    }
+
+    var hiddenRuleCount: Int { hiddenPorts.count + hiddenProcesses.count + hiddenFolders.count }
+
+    func resetHidden() {
+        hiddenPorts = []
+        hiddenProcesses = []
+        hiddenFolders = []
+        for key in ["hiddenPorts", "hiddenProcesses", "hiddenFolders"] { UserDefaults.standard.removeObject(forKey: key) }
+        show("Hidden list cleared")
+    }
+
     /// Clicking the radar sends out a ping ring.
     func poke() {
         pingDate = Date()
@@ -460,16 +513,26 @@ final class ServerStore: ObservableObject {
 
     func terminate(_ entry: ServerEntry, force: Bool) {
         react(.lost, for: 1.2)
+        // Processes merged into this row go too, or the port would stay taken.
+        let others = siblings(of: entry)
         Task {
             let pid = entry.pid
             let startTime = entry.startTime
             let result = await Task.detached {
                 KillService.terminate(pid: pid, expectedStartTime: startTime, force: force)
             }.value
+            for other in others {
+                let otherPID = other.pid
+                let otherStart = other.startTime
+                _ = await Task.detached {
+                    KillService.terminate(pid: otherPID, expectedStartTime: otherStart, force: force)
+                }.value
+            }
 
             switch result {
             case .signalled(let count):
-                let extra = count > 1 ? " (+\(count - 1) child processes)" : ""
+                let total = count + others.count
+                let extra = total > 1 ? " (+\(total - 1) more processes)" : ""
                 show((force ? "Killed" : "Stopping") + " :\(entry.port)" + extra)
                 if stopping[entry.id] == nil { stopping[entry.id] = Date() }
                 remember(entry)
