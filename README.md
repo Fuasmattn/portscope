@@ -26,14 +26,14 @@ swift build -c release && .build/release/Portscope
 
 ## Use
 
-Click the menu bar item, or press `Ctrl+Option+L`, to open the panel. Drag it by the radar card. It closes when it loses focus unless you pin it with the pin in the footer.
+Click the menu bar item, or press **⌃⌥L**, to open the panel. Drag it by the radar card. It closes when it loses focus unless you pin it with the pin in the footer.
 
 **On a row**
 
 | Action | What happens |
 |---|---|
-| Click,&nbsp;`Space`,&nbsp;or&nbsp;the&nbsp;info&nbsp;button | Details popover: command, folder, PID, and the path to open for this port |
-| `Return`&nbsp;or&nbsp;the&nbsp;open&nbsp;button | Opens it in the browser |
+| Click,&nbsp;Space,&nbsp;or&nbsp;the&nbsp;info&nbsp;button | Details popover: command, folder, PID, and the path to open for this port |
+| ↩&nbsp;or&nbsp;the&nbsp;open&nbsp;button | Opens it in the browser |
 | Stop&nbsp;button,&nbsp;then&nbsp;**Stop** | Sends SIGTERM. Option-click sends SIGKILL. If the process ignores SIGTERM, a **Force kill** button appears |
 | Right-click | Copy URL, port, or curl command. Open the folder in an editor or terminal. Pin. Hide by port, process, or project |
 
@@ -41,9 +41,9 @@ Click the menu bar item, or press `Ctrl+Option+L`, to open the panel. Drag it by
 
 | Action | What happens |
 |---|---|
-| `Up`&nbsp;/&nbsp;`Down` | Selects a row. `Cmd+Backspace` stops it |
-| `Cmd+F` | Filter by port, project, process, or branch. The field also appears on its own above 8 rows |
-| `Esc` | Closes details, then clears the filter, then the selection, then the panel |
+| ↑&nbsp;↓ | Selects a row. ⌘⌫ stops it, ⌥⌘⌫ force kills |
+| ⌘F | Filter by port, project, process, or branch. The field also appears on its own above 8 rows |
+| ⎋ | Closes details, then clears the filter, then the selection, then the panel |
 | Click&nbsp;a&nbsp;blip | Opens that server. Clicking empty scope sends a ping |
 | Recently&nbsp;stopped | The last five servers you stopped, each with **Start again** |
 
