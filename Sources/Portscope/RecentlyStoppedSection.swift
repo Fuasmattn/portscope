@@ -1,4 +1,4 @@
-import PanelCore
+import PortscopeCore
 import SwiftUI
 
 /// Servers stopped from here, with a way to start them again.

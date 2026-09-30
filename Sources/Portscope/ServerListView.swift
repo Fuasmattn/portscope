@@ -1,5 +1,5 @@
 import AppKit
-import PanelCore
+import PortscopeCore
 import SwiftUI
 
 private let maxListHeight: CGFloat = 440

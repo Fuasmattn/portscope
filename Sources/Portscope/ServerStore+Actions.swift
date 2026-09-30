@@ -1,5 +1,5 @@
 import AppKit
-import PanelCore
+import PortscopeCore
 
 // Things the user does to a server: open, copy, reveal, stop, start again.
 extension ServerStore {

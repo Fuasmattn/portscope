@@ -1,5 +1,5 @@
 import Foundation
-import PanelCore
+import PortscopeCore
 
 /// Which servers the list shows by default: pins always, hidden ports/processes/folders never,
 /// system noise never. Persisted in UserDefaults.

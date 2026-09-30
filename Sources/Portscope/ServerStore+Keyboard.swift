@@ -1,5 +1,5 @@
 import AppKit
-import PanelCore
+import PortscopeCore
 
 // List navigation from the keyboard, dispatched by the app's local event monitor.
 extension ServerStore {

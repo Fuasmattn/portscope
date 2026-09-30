@@ -1,4 +1,4 @@
-# Localhost Panel — Phase 1 spec
+# Portscope — Phase 1 spec
 
 Working title. A native macOS menu bar app that shows which dev servers are listening on localhost, so you never have to run `lsof` and guess ports.
 
@@ -31,8 +31,8 @@ Working title. A native macOS menu bar app that shows which dev servers are list
 Tunnels, QR codes, log tailing, notifications, agent-session status (only the parent-chain attribution above).
 
 ## Architecture
-- `PanelCore` (Foundation only): parsers, process table, project detection, attribution, kill service. Unit-testable.
-- `LocalhostPanel` (SwiftUI/AppKit): menu bar UI, floating panel, hotkey, settings.
+- `PortscopeCore` (Foundation only): parsers, process table, project detection, attribution, kill service. Unit-testable.
+- `Portscope` (SwiftUI/AppKit): menu bar UI, floating panel, hotkey, settings.
 
 ## Phase 2 (shipped)
 
@@ -54,7 +54,7 @@ What grew on top of phase 1, after using it for a while.
 - Consequences: no launch-at-login toggle in Settings (needs `SMAppService` in a bundle), no notifications, no Sparkle.
 
 ### Architecture
-- `PanelCore` gained `ListLogic` (filter match, stuck detection, project grouping, port merge, conflict) as pure functions with tests, and `HTTPProbe` now returns the status code.
+- `PortscopeCore` gained `ListLogic` (filter match, stuck detection, project grouping, port merge, conflict) as pure functions with tests, and `HTTPProbe` now returns the status code.
 - `ServerStore` is the live state (scan, arrivals, stop attempts, selection). Preferences live in `PanelSettings`, visibility rules in `VisibilityRules`, stop history in `StopHistory`, editor and icon lookup in `Launchers`. Child objects forward `objectWillChange` to the store.
 - Views: `ServerListView` (list, search, footer), `ServerRow` (row, popover, menu), `WatcherHeader` (radar card), `RadarView`, `RecentlyStoppedSection`, `ButtonStyles`, `SettingsView`, `FloatingPanel`.
 

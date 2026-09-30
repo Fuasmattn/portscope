@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import PanelCore
+@testable import PortscopeCore
 
 final class LsofParserTests: XCTestCase {
     func testParsesIPv4IPv6AndWildcard() {

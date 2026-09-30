@@ -4,7 +4,7 @@ import Combine
 import SwiftUI
 
 @main
-struct LocalhostPanelApp: App {
+struct PortscopeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @ObservedObject private var store = ServerStore.shared
 

@@ -1,5 +1,5 @@
 import AppKit
-import PanelCore
+import PortscopeCore
 import SwiftUI
 
 /// Title, count, and running commentary over the radar scope, on a glass card.
@@ -13,7 +13,7 @@ struct WatcherHeader: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text("Localhost")
+                    Text("Portscope")
                         .font(.headline)
                         .foregroundStyle(store.settings.showMascot ? Color.white : Color.primary)
                     Text("\(store.badgeCount)")

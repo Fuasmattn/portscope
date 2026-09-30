@@ -1,6 +1,6 @@
-# Localhost Panel
+# Portscope
 
-Menu bar app that shows which dev servers are listening on localhost. Working title.
+Menu bar radar for your dev servers: a scope of everything listening on localhost, with open, stop, and a bit of attitude.
 
 ![The panel: radar header, three servers, recently stopped, footer](docs/screenshot.png)
 
@@ -12,7 +12,7 @@ Requires Xcode 26 (or its command line tools) on macOS.
 
 ```sh
 swift build -c release
-.build/release/LocalhostPanel
+.build/release/Portscope
 ```
 
 Start at login without an app bundle or signing, via a LaunchAgent:

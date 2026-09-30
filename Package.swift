@@ -2,15 +2,15 @@
 import PackageDescription
 
 let package = Package(
-    name: "LocalhostPanel",
+    name: "Portscope",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "LocalhostPanel", targets: ["LocalhostPanel"]),
+        .executable(name: "Portscope", targets: ["Portscope"]),
     ],
     targets: [
-        .target(name: "PanelCore"),
-        .executableTarget(name: "LocalhostPanel", dependencies: ["PanelCore"]),
-        .testTarget(name: "PanelCoreTests", dependencies: ["PanelCore"]),
+        .target(name: "PortscopeCore"),
+        .executableTarget(name: "Portscope", dependencies: ["PortscopeCore"]),
+        .testTarget(name: "PortscopeCoreTests", dependencies: ["PortscopeCore"]),
     ],
     swiftLanguageModes: [.v5]
 )

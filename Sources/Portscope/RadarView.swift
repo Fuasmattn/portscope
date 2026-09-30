@@ -1,4 +1,4 @@
-import PanelCore
+import PortscopeCore
 import SwiftUI
 
 /// A radar scope that fills the header card. Its center sits on the card's top-right corner, so the

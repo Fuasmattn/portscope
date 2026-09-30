@@ -1,5 +1,5 @@
 import Foundation
-import PanelCore
+import PortscopeCore
 
 // Read-only views over the scan result: merging, filtering, grouping, counts.
 extension ServerStore {

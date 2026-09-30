@@ -1,6 +1,6 @@
 import AppKit
 import Combine
-import PanelCore
+import PortscopeCore
 import SwiftUI
 
 enum Reaction {

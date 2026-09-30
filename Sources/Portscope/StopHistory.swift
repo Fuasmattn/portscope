@@ -1,5 +1,5 @@
 import Foundation
-import PanelCore
+import PortscopeCore
 
 /// A server we stopped, remembered so it can be started again.
 struct StoppedServer: Codable, Identifiable, Equatable {

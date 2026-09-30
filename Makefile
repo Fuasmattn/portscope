@@ -1,29 +1,29 @@
 # Build, install as a login item via launchd, and remove again. No code signing needed.
 #
-#   make release    build .build/release/LocalhostPanel
+#   make release    build .build/release/Portscope
 #   make install    copy the binary to ~/.local/bin and start it at login through launchd
 #   make restart    reload the launchd job after a rebuild
 #   make uninstall  stop it and remove the binary and the LaunchAgent
 
-LABEL      := com.martinprinz.localhost-panel
+LABEL      := com.martinprinz.portscope
 BIN_DIR    := $(HOME)/.local/bin
-BIN        := $(BIN_DIR)/LocalhostPanel
+BIN        := $(BIN_DIR)/Portscope
 AGENT_DIR  := $(HOME)/Library/LaunchAgents
 PLIST      := $(AGENT_DIR)/$(LABEL).plist
 DOMAIN     := gui/$(shell id -u)
-LOG_DIR    := $(HOME)/Library/Logs/LocalhostPanel
+LOG_DIR    := $(HOME)/Library/Logs/Portscope
 
 .PHONY: release install restart uninstall status
 
 release:
 	swift build -c release
-	@echo "Built .build/release/LocalhostPanel"
+	@echo "Built .build/release/Portscope"
 
 install: release
 	mkdir -p "$(BIN_DIR)" "$(AGENT_DIR)" "$(LOG_DIR)"
 	-launchctl bootout $(DOMAIN)/$(LABEL) 2>/dev/null
-	-pkill -x LocalhostPanel 2>/dev/null
-	cp .build/release/LocalhostPanel "$(BIN)"
+	-pkill -x Portscope 2>/dev/null
+	cp .build/release/Portscope "$(BIN)"
 	@printf '%s\n' \
 	  '<?xml version="1.0" encoding="UTF-8"?>' \
 	  '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
@@ -40,13 +40,13 @@ install: release
 	  '</dict>' \
 	  '</plist>' > "$(PLIST)"
 	launchctl bootstrap $(DOMAIN) "$(PLIST)"
-	@echo "Installed. LocalhostPanel starts now and at every login."
+	@echo "Installed. Portscope starts now and at every login."
 
 restart: install
 
 uninstall:
 	-launchctl bootout $(DOMAIN)/$(LABEL) 2>/dev/null
-	-pkill -x LocalhostPanel 2>/dev/null
+	-pkill -x Portscope 2>/dev/null
 	rm -f "$(PLIST)" "$(BIN)"
 	@echo "Removed the LaunchAgent and $(BIN)."
 
