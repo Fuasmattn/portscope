@@ -8,7 +8,16 @@ Every listening TCP port owned by you becomes a row: port, project folder, git b
 
 ## Install
 
-Requires macOS 26 with Xcode or the Command Line Tools. No signing, no bundle.
+Requires macOS 26 on Apple Silicon. No app bundle, no notarization.
+
+**Homebrew**
+
+```sh
+brew install fuasmattn/tap/portscope
+brew services start portscope
+```
+
+**From source** (Xcode or the Command Line Tools):
 
 ```sh
 git clone https://github.com/Fuasmattn/portscope.git

@@ -72,6 +72,9 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Section {
+                LabeledContent("Version", value: Portscope.version)
+            }
             if let message = store.message {
                 Section {
                     Text(message)

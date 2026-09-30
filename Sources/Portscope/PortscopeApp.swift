@@ -3,7 +3,22 @@ import Carbon.HIToolbox
 import Combine
 import SwiftUI
 
+/// Entry point. Handles command-line flags before SwiftUI takes over.
 @main
+enum Entry {
+    static func main() {
+        if CommandLine.arguments.dropFirst().contains(where: { $0 == "--version" || $0 == "-v" }) {
+            print("Portscope \(Portscope.version)")
+            exit(0)
+        }
+        PortscopeApp.main()
+    }
+}
+
+enum Portscope {
+    static let version = "0.1.1"
+}
+
 struct PortscopeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @ObservedObject private var store = ServerStore.shared
