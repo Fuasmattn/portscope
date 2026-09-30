@@ -5,7 +5,7 @@
 #   make restart    reload the launchd job after a rebuild
 #   make uninstall  stop it and remove the binary and the LaunchAgent
 
-LABEL      := com.martinprinz.portscope
+LABEL      := dev.martinprinz.portscope
 BIN_DIR    := $(HOME)/.local/bin
 BIN        := $(BIN_DIR)/Portscope
 AGENT_DIR  := $(HOME)/Library/LaunchAgents

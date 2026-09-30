@@ -63,3 +63,7 @@ swift test           # needs Xcode; the Command Line Tools ship without XCTest
 ## Kill safety
 
 Every row carries the process start time captured at scan time. Before signalling, Portscope re-reads it for that PID and aborts if it changed, so a reused PID is never killed. Only your own processes are listed. SIGKILL is never sent unless you ask for it.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
