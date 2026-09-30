@@ -1,45 +1,64 @@
 # Portscope
 
-Menu bar radar for your dev servers: a scope of everything listening on localhost, with open, stop, and a bit of attitude.
+Menu bar radar for your dev servers. One scope of everything listening on localhost, with open, stop, and a bit of attitude.
 
-![The panel: radar header, three servers, recently stopped, footer](docs/screenshot.png)
+<p align="center">
+  <img src="docs/panel-dark.png" width="400" alt="Portscope in dark mode: radar header with three contacts, three server rows, footer">
+  <img src="docs/panel-light.png" width="400" alt="Portscope in light mode, same servers">
+</p>
 
-See [SPEC.md](SPEC.md) for scope and decisions.
+Every listening TCP port owned by you becomes a row: port, project folder, git branch, process, uptime, and what started it (Claude Code, Cursor, Terminal, …). Servers whose parent has exited are marked **detached**, ports bound to all interfaces get a **network** badge, and the radar pings them all every few seconds.
 
-## Build and run
+## Install
 
-Requires Xcode 26 (or its command line tools) on macOS.
-
-```sh
-swift build -c release
-.build/release/Portscope
-```
-
-Start at login without an app bundle or signing, via a LaunchAgent:
+Requires macOS 26 with Xcode or the Command Line Tools. No signing, no bundle.
 
 ```sh
-make install     # builds release, copies to ~/.local/bin, loads the agent
-make restart     # after pulling changes
-make uninstall
+git clone https://github.com/Fuasmattn/portscope.git
+cd portscope
+make install
 ```
 
-Run the tests:
+That builds a release binary, copies it to `~/.local/bin/Portscope`, and loads a LaunchAgent so it starts now and at every login. `make restart` after pulling changes, `make uninstall` to remove everything.
+
+To just try it once:
 
 ```sh
-swift test
+swift build -c release && .build/release/Portscope
 ```
 
-- Click the menu bar item to open the panel under it, or press Control-Option-L (changeable in Settings) to open it near the cursor. Drag it by the radar card, pin it open with the pin in the footer, Esc closes it.
-- Click the arrow to open a server in your browser. Click the x, then Stop, to send SIGTERM. Option-click Stop for SIGKILL.
-- Right-click a row to pin, hide, copy the URL or port, open the project in an installed editor or terminal, or reveal its working directory.
-- After Stop, the row shows "stopping…". If the process ignores SIGTERM for a few seconds, a Force kill button appears.
-- With more than 8 rows a filter field appears. Type a port, project, process, or branch.
-- An orange network icon marks servers bound to all interfaces (reachable from your network).
-- Click a blip on the radar to open that server. Click empty scope for a ping.
-- Click a row (or the info icon) for a details popover: command line, folder, PID, with copy buttons. Settings can make a click open the browser instead.
-- Servers from the same folder are grouped under a project header. One app listening on a port from two processes (IPv4 and IPv6, or a parent and worker) shows as one row with a ×2 badge; Stop signals both. Two projects on the same port get an orange "port conflict" badge.
-- Right-click also offers "Hide project", by folder. Settings has a reset for all hidden ports, processes, and projects. A dot before the port shows the HTTP status: green answered, yellow 4xx, red 5xx, grey open but silent.
-- Keyboard: ↑ ↓ select, ↩ open, Space details, ⌘⌫ stop (⌥ for SIGKILL), ⌘F filter, ⎋ clear.
-- Recently stopped servers stay listed at the bottom with a "Start again" button that reruns the same command in the same folder.
-- The popover also has a path field per port, so Open goes to `/docs` or wherever you last set. Right-click → Copy as curl copies `curl -i` for that URL.
-- Settings (gear in the footer): hotkey, reopen panel where you left it, menu bar badge style, stale server mark (orange dot in the menu bar after N hours), show system noise, refresh rate, radar on/off.
+## Use
+
+Click the menu bar item, or press **⌃⌥L**, to open the panel. Drag it by the radar card. It closes when it loses focus unless you pin it with the pin in the footer.
+
+| On a row | |
+|---|---|
+| Click, Space, or the ⓘ | Details: command, folder, PID, and a path to open for this port |
+| ↩ or the open icon | Open in the browser |
+| The ✕, then **Stop** | SIGTERM. Option-click for SIGKILL. If it ignores SIGTERM, a **Force kill** button appears |
+| Right-click | Copy URL, port, or curl · open the folder in an installed editor or terminal · pin · hide by port, process, or project |
+
+| Elsewhere | |
+|---|---|
+| ↑ ↓ | Select a row, ⌘⌫ stops it |
+| ⌘F | Filter by port, project, process, or branch (the field also appears on its own above 8 rows) |
+| ⎋ | Close details, clear filter, clear selection, close the panel, in that order |
+| Radar | Click a blip to open that server, click empty scope to ping |
+| Recently stopped | The last five servers you stopped, with **Start again** |
+
+Two processes on the same port from the same folder (IPv4 and IPv6, or a parent and its worker) collapse into one row marked **×2**; Stop signals both. Two *projects* on the same port are flagged **port conflict**.
+
+Settings (gear in the footer): hotkey, reopen the panel where you left it, menu bar badge, a stale mark after N hours, system noise, click behaviour, refresh rate, radar on or off, reset hidden rules.
+
+## Development
+
+```sh
+swift build          # debug
+swift test           # needs Xcode; the Command Line Tools ship without XCTest
+```
+
+`Sources/PortscopeCore` is Foundation only: `lsof` and `ps` parsing, project detection, attribution, kill safety, list logic. `Sources/Portscope` is the SwiftUI and AppKit app. Design notes and decisions live in [SPEC.md](SPEC.md).
+
+## Kill safety
+
+Every row carries the process start time captured at scan time. Before signalling, Portscope re-reads it for that PID and aborts if it changed, so a reused PID is never killed. Only your own processes are listed. SIGKILL is never sent unless you ask for it.
