@@ -2,6 +2,7 @@
 #
 #   make release    build .build/release/Portscope
 #   make install    copy the binary to ~/.local/bin and start it at login through launchd
+#   make install-binary  same, from a prebuilt ./Portscope (release tarball, no toolchain needed)
 #   make restart    reload the launchd job after a rebuild
 #   make uninstall  stop it and remove the binary and the LaunchAgent
 
@@ -13,17 +14,24 @@ PLIST      := $(AGENT_DIR)/$(LABEL).plist
 DOMAIN     := gui/$(shell id -u)
 LOG_DIR    := $(HOME)/Library/Logs/Portscope
 
-.PHONY: release install restart uninstall status
+.PHONY: release install install-binary restart uninstall status
 
 release:
 	swift build -c release
 	@echo "Built .build/release/Portscope"
 
 install: release
+	$(MAKE) install-binary SOURCE=.build/release/Portscope
+
+SOURCE ?= ./Portscope
+
+install-binary:
+	@test -x "$(SOURCE)" || { echo "No binary at $(SOURCE). Run make install (needs the Swift toolchain) or unpack the release tarball here."; exit 1; }
 	mkdir -p "$(BIN_DIR)" "$(AGENT_DIR)" "$(LOG_DIR)"
 	-launchctl bootout $(DOMAIN)/$(LABEL) 2>/dev/null
 	-pkill -x Portscope 2>/dev/null
-	cp .build/release/Portscope "$(BIN)"
+	cp "$(SOURCE)" "$(BIN)"
+	-xattr -d com.apple.quarantine "$(BIN)" 2>/dev/null
 	@printf '%s\n' \
 	  '<?xml version="1.0" encoding="UTF-8"?>' \
 	  '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \

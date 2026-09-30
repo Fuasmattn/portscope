@@ -18,6 +18,8 @@ make install
 
 That builds a release binary, copies it to `~/.local/bin/Portscope`, and loads a LaunchAgent so it starts now and at every login. `make restart` after pulling changes, `make uninstall` to remove everything.
 
+No toolchain? Grab the tarball from the [latest release](https://github.com/Fuasmattn/portscope/releases/latest), unpack it, and run `make install-binary` inside. The binary is ad-hoc signed, not notarized; the target clears the quarantine flag for you.
+
 To just try it once:
 
 ```sh
