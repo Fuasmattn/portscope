@@ -2,14 +2,7 @@
 
 Menu bar radar for your dev servers. One scope of everything listening on localhost, with open, stop, and a bit of attitude.
 
-<p align="center">
-  <img src="docs/portscope.gif" width="560" alt="Portscope in action: a server appears, one is stopped and fades off the radar, a ping goes out">
-</p>
-
-<p align="center">
-  <img src="docs/panel-dark.png" width="360" alt="Portscope in dark mode: radar header with contacts, grouped server rows, hovered row with actions">
-  <img src="docs/panel-light.png" width="360" alt="Portscope in light mode, same servers">
-</p>
+<img src="docs/portscope.gif" width="420" alt="Portscope in action: a server appears, one is stopped and fades off the radar, a ping goes out">
 
 Every listening TCP port owned by you becomes a row: port, project folder, git branch, process, uptime, and what started it (Claude Code, Cursor, Terminal, …). Servers whose parent has exited are marked **detached**, ports bound to all interfaces get a **network** badge, and the radar pings them all every few seconds.
 
