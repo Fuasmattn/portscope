@@ -1,5 +1,11 @@
 # Portscope
 
+[![Release](https://img.shields.io/github/v/release/Fuasmattn/portscope?style=flat)](https://github.com/Fuasmattn/portscope/releases/latest)
+[![CI](https://github.com/Fuasmattn/portscope/actions/workflows/swift.yml/badge.svg)](https://github.com/Fuasmattn/portscope/actions/workflows/swift.yml)
+[![Platform](https://img.shields.io/badge/platform-macOS%2026%20%7C%20Apple%20Silicon-lightgrey?style=flat)](#install)
+[![License](https://img.shields.io/github/license/Fuasmattn/portscope?style=flat)](LICENSE)
+[![Homebrew](https://img.shields.io/badge/brew-fuasmattn%2Ftap%2Fportscope-orange?style=flat)](https://github.com/Fuasmattn/homebrew-tap)
+
 Menu bar radar for your dev servers. One scope of everything listening on localhost, with open, stop, and a bit of attitude.
 
 <img src="docs/portscope.gif" width="420" alt="Portscope in action: a server appears, one is stopped and fades off the radar, a ping goes out">
