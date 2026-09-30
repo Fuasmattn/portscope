@@ -69,7 +69,7 @@ swift build          # debug
 swift test           # needs Xcode; the Command Line Tools ship without XCTest
 ```
 
-`Sources/PortscopeCore` is Foundation only: `lsof` and `ps` parsing, project detection, attribution, kill safety, list logic. `Sources/Portscope` is the SwiftUI and AppKit app. Design notes and decisions live in [SPEC.md](SPEC.md).
+`Sources/PortscopeCore` is Foundation only: `lsof` and `ps` parsing, project detection, attribution, kill safety, list logic. `Sources/Portscope` is the SwiftUI and AppKit app. Design notes and decisions live in [SPEC.md](SPEC.md). Build, install, and release mechanics, including the Homebrew tap and `make publish`, are in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Kill safety
 

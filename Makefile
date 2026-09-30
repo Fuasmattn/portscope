@@ -5,6 +5,7 @@
 #   make install-binary  same, from a prebuilt ./Portscope (release tarball, no toolchain needed)
 #   make restart    reload the launchd job after a rebuild
 #   make uninstall  stop it and remove the binary and the LaunchAgent
+#   make publish VERSION=x.y.z   tag, build, release on GitHub, update the Homebrew tap (see docs/RELEASING.md)
 
 LABEL      := dev.martinprinz.portscope
 BIN_DIR    := $(HOME)/.local/bin
@@ -14,7 +15,7 @@ PLIST      := $(AGENT_DIR)/$(LABEL).plist
 DOMAIN     := gui/$(shell id -u)
 LOG_DIR    := $(HOME)/Library/Logs/Portscope
 
-.PHONY: release install install-binary restart uninstall status
+.PHONY: release install install-binary restart uninstall status publish
 
 release:
 	swift build -c release
@@ -60,3 +61,7 @@ uninstall:
 
 status:
 	@launchctl print $(DOMAIN)/$(LABEL) 2>/dev/null | grep -E "state|pid|path" || echo "not loaded"
+
+publish:
+	@test -n "$(VERSION)" || { echo "usage: make publish VERSION=x.y.z"; exit 1; }
+	scripts/publish.sh "$(VERSION)"
